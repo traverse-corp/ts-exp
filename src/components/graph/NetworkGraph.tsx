@@ -30,9 +30,6 @@ const NetworkGraph = () => {
             const isSelected = selectedNode?.id === node.id;
             const isStart = node.isStart;
             const isDbMatched = node.isTerminal === true; 
-            // ... (기존 렌더링 로직 복붙 유지) ...
-            const isRisk = node.group === 'risk';
-            const isExchange = node.group === 'exchange';
             const baseR = isStart ? 12 : (isDbMatched ? 10 : 6);
             const r = baseR;
 
