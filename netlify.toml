@@ -1,0 +1,16 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# 프록시 설정 (이게 _redirects 보다 강력합니다)
+[[redirects]]
+  from = "/api/tronscan/*"
+  to = "https://apilist.tronscanapi.com/:splat"
+  status = 200
+  force = true
+
+# SPA 라우팅 (새로고침 404 방지)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
