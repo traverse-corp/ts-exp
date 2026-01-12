@@ -1,4 +1,5 @@
 import { tronWeb, isValidAddress } from '../lib/tronClient';
+import axios from 'axios';
 
 export interface CleanTx {
   txID: string;
@@ -219,4 +220,101 @@ export const fetchAccountDetail = async (address: string): Promise<AccountDetail
 
 export const fetchRecentHistory = async (address: string): Promise<CleanTx[]> => {
     return fetchAddressTransactions(address, 0);
+};
+
+// [수정] 수동 확장 함수 (기존 Safety Lock 우회 버전)
+export const fetchNodeExpansion = async (address: string, direction: 'in' | 'out', sortType: 'time' | 'value'): Promise<{ nodes: any[], links: any[] }> => {
+  try {
+    // [핵심] 기존 fetchRecentHistory를 쓰지 않고, 여기서 직접 API를 호출합니다.
+    // 이렇게 하면 "라벨링된 주소인지 확인하는 로직"을 타지 않으므로 무조건 데이터를 가져옵니다.
+    
+    // 1. API 호출 (TRX + USDT 병렬 호출)
+    // 트론스캔 API: 최근 50개 정도만 가져와서 분석
+    const [trxRes, usdtRes] = await Promise.all([
+        axios.get(`https://apilist.tronscan.org/api/transfer`, {
+            params: { sort: '-timestamp', count: 'true', limit: '50', address: address }
+        }),
+        axios.get(`https://apilist.tronscan.org/api/token_trc20/transfers`, {
+            params: { sort: '-timestamp', count: 'true', limit: '50', relatedAddress: address, contract_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t' }
+        })
+    ]);
+
+    // 2. 데이터 정제 (Raw Data -> CleanTx)
+    const rawTrx = trxRes.data.data || [];
+    const rawUsdt = usdtRes.data.token_transfers || [];
+
+    const cleanTrx: CleanTx[] = rawTrx.map((tx: any) => ({
+        txID: tx.transactionHash,
+        timestamp: tx.timestamp,
+        sender: tx.transferFromAddress,
+        receiver: tx.transferToAddress,
+        amount: tx.amount / 1_000_000, // TRX Decimals 6
+        token: 'TRX'
+    }));
+
+    const cleanUsdt: CleanTx[] = rawUsdt.map((tx: any) => ({
+        txID: tx.transaction_id,
+        timestamp: tx.block_ts,
+        sender: tx.from_address,
+        receiver: tx.to_address,
+        amount: Number(tx.quant) / 1_000_000, // USDT Decimals 6
+        token: 'USDT'
+    }));
+
+    // 3. 통합 및 필터링
+    const allHistory = [...cleanTrx, ...cleanUsdt];
+
+    // (1) 1 TRX/USDT 미만 제거 (잡음 제거)
+    // (2) 방향(In/Out) 필터링
+    const filtered = allHistory.filter(tx => {
+       if (tx.amount < 1) return false;
+       if (direction === 'in') return tx.receiver === address;
+       if (direction === 'out') return tx.sender === address;
+       return false;
+    });
+
+    // 4. 정렬 (사용자 선택 기준)
+    if (sortType === 'value') {
+        filtered.sort((a, b) => b.amount - a.amount); // 고액순
+    } else {
+        filtered.sort((a, b) => b.timestamp - a.timestamp); // 최신순
+    }
+
+    // 5. 상위 10개 Cut
+    const top10 = filtered.slice(0, 10);
+
+    // 6. 그래프 포맷 변환
+    const newNodes: any[] = [];
+    const newLinks: any[] = [];
+    const nodeIds = new Set<string>();
+
+    top10.forEach(tx => {
+        const otherAddr = direction === 'in' ? tx.sender : tx.receiver;
+        
+        // 이미 맵에 존재하는지 여부는 Store의 addNodes가 알아서 처리하므로 여기선 일단 생성
+        if (!nodeIds.has(otherAddr)) {
+            newNodes.push({
+                id: otherAddr,
+                group: 'target',
+                val: 5,
+                label: otherAddr.slice(0, 4), // 일단 앞자리만
+                createdAt: Date.now()
+            });
+            nodeIds.add(otherAddr);
+        }
+
+        newLinks.push({
+            source: direction === 'in' ? otherAddr : address,
+            target: direction === 'in' ? address : otherAddr,
+            value: tx.amount,
+            txDetails: [tx]
+        });
+    });
+
+    return { nodes: newNodes, links: newLinks };
+
+  } catch (error) {
+    console.error("Manual Expand Error:", error);
+    return { nodes: [], links: [] };
+  }
 };

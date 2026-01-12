@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react';
 import { useGlobalStore } from '../../stores/useGlobalStore';
 import { fetchAccountDetail, fetchRecentHistory, type AccountDetail, type CleanTx } from '../../services/tronScanner';
 import { checkAddressesRisk } from '../../services/riskChecker';
+import { RequestModal } from './RequestModal';
+import { TRANSLATIONS } from '../../constants/lang'; // Import
 
 export const DetailPanel = () => {
-  const { selectedNode, selectedLink, setSelectedNode, setSelectedLink, removeNode, updateNode, addNodes } = useGlobalStore();
-  
-  // [Node State]
+  const { selectedNode, selectedLink, setSelectedNode, setSelectedLink, removeNode, updateNode, addNodes, language } = useGlobalStore();
+  const t = TRANSLATIONS[language]; // 딕셔너리
+
+  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [accountInfo, setAccountInfo] = useState<AccountDetail | null>(null);
   const [history, setHistory] = useState<(CleanTx & { riskLabel?: string })[]>([]);
   const [nodeLoading, setNodeLoading] = useState(false);
   const [memoInput, setMemoInput] = useState('');
   const [colorInput, setColorInput] = useState('#22c55e');
   
-  // [Link State] - 잔상 해결을 위해 State로 관리
   const [linkTransactions, setLinkTransactions] = useState<CleanTx[]>([]);
   const [linkTotalUSDT, setLinkTotalUSDT] = useState(0);
   const [linkTotalTRX, setLinkTotalTRX] = useState(0);
@@ -30,12 +32,11 @@ export const DetailPanel = () => {
     setSelectedLink(null);
   };
 
-  // 1. [노드] 데이터 페칭 및 초기화
   useEffect(() => {
     if (selectedNode) {
       setAccountInfo(null);
       setHistory([]);
-      setNodeLoading(true); // 로딩 시작
+      setNodeLoading(true);
 
       setMemoInput(selectedNode.memo || '');
       setColorInput(selectedNode.customColor || (selectedNode.group === 'risk' ? '#ef4444' : selectedNode.group === 'exchange' ? '#3b82f6' : '#22c55e'));
@@ -55,32 +56,29 @@ export const DetailPanel = () => {
            return tx;
         });
         setHistory(enrichedTxs);
-        setNodeLoading(false); // 로딩 끝
+        setNodeLoading(false);
       });
     }
   }, [selectedNode?.id]);
 
-  // 2. [링크] 데이터 동기화 및 잔상 제거
   useEffect(() => {
       if (selectedLink) {
-          // [중요] 이전 데이터 싹 비우기 (잔상 방지)
           setLinkTransactions([]);
           setLinkTotalUSDT(0);
           setLinkTotalTRX(0);
 
-          // 데이터 채우기
           const txs: CleanTx[] = (selectedLink as any).txDetails || [];
           setLinkTransactions(txs);
           
           setLinkTotalUSDT(txs.filter(tx => tx.token === 'USDT').reduce((acc, cur) => acc + cur.amount, 0));
           setLinkTotalTRX(txs.filter(tx => tx.token === 'TRX').reduce((acc, cur) => acc + cur.amount, 0));
       }
-  }, [selectedLink]); // 링크 객체가 바뀔 때마다 실행
+  }, [selectedLink]);
 
   const handleSaveMemo = () => {
     if (selectedNode) {
       updateNode(selectedNode.id, { memo: memoInput });
-      showToast('✅ Memo Saved!');
+      showToast(t.toast_memo_saved);
     }
   };
 
@@ -92,7 +90,7 @@ export const DetailPanel = () => {
 
   const handleCopy = (text: string, label: string) => {
       navigator.clipboard.writeText(text);
-      showToast(`📋 ${label} Copied!`);
+      showToast(`${label} ${t.toast_copied}`);
   };
 
   const handleAddFromHistory = (address: string) => {
@@ -103,7 +101,7 @@ export const DetailPanel = () => {
           isTerminal: false,
           createdAt: Date.now()
       }]);
-      showToast('🚀 Trace Started');
+      showToast(t.toast_trace_started);
   };
 
   const Skeleton = ({ className }: { className: string }) => (
@@ -120,25 +118,47 @@ export const DetailPanel = () => {
         </div>
     )}
 
+    {selectedNode && (
+        <RequestModal 
+            isOpen={isRequestModalOpen}
+            onClose={() => setIsRequestModalOpen(false)}
+            node={selectedNode}
+            history={history}
+            showToast={showToast}
+        />
+    )}
+
     <div className="absolute right-4 top-16 bottom-4 w-[420px] bg-white/95 backdrop-blur-md border border-slate-300 shadow-2xl rounded-xl z-[60] flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
       
-      <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-white shadow-sm z-10">
-        <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-          {selectedNode ? '📍 Node Inspector' : '🔗 Link Inspector'}
-        </h2>
-        <div className="flex gap-2">
-            {selectedNode && (
-                <button 
-                    onClick={() => { if(confirm('Delete node?')) { removeNode(selectedNode.id); handleClose(); } }}
-                    className="text-xs text-red-500 hover:bg-red-50 border border-red-200 px-3 py-1.5 rounded transition-colors font-bold"
-                >
-                    Delete
+      {/* Header */}
+      <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10 space-y-3">
+        <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
+            {selectedNode ? t.inspector_node : t.inspector_link}
+            </h2>
+            <div className="flex gap-2">
+                {selectedNode && (
+                    <button 
+                        onClick={() => { if(confirm(t.confirm_delete_node)) { removeNode(selectedNode.id); handleClose(); } }}
+                        className="text-xs text-red-500 hover:bg-red-50 border border-red-200 px-3 py-1.5 rounded transition-colors font-bold"
+                    >
+                        {t.btn_delete}
+                    </button>
+                )}
+                <button onClick={handleClose} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded text-xs font-bold transition-colors">
+                    {t.btn_close} ✕
                 </button>
-            )}
-            <button onClick={handleClose} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded text-xs font-bold transition-colors">
-                Close ✕
-            </button>
+            </div>
         </div>
+
+        {selectedNode && (
+            <button 
+                onClick={() => setIsRequestModalOpen(true)}
+                className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-sm"
+            >
+                <span>{t.btn_req_coop}</span>
+            </button>
+        )}
       </div>
       
       <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-50/50">
@@ -146,9 +166,9 @@ export const DetailPanel = () => {
         {/* CASE 1: 노드 정보 */}
         {selectedNode ? (
             <div className="space-y-6">
-                {selectedNode.label && (
+                {selectedNode.label && selectedNode.isTerminal && (
                     <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-100 shadow-sm">
-                        <div className="text-[10px] text-blue-500 uppercase font-bold mb-1">Identified Entity</div>
+                        <div className="text-[10px] text-blue-500 uppercase font-bold mb-1">{t.label_identified}</div>
                         <div className="text-xl font-black text-slate-800 flex items-center gap-2">
                             <span>🏢 {selectedNode.label}</span>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full text-white ${selectedNode.group === 'exchange' ? 'bg-blue-500' : 'bg-red-500'}`}>
@@ -160,23 +180,23 @@ export const DetailPanel = () => {
                 
                 <div className="flex gap-2 items-end bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
                     <div className="flex-1">
-                        <label className="text-[10px] text-slate-500 uppercase font-bold">Memo</label>
+                        <label className="text-[10px] text-slate-500 uppercase font-bold">{t.label_memo}</label>
                         <div className="flex gap-1 mt-1">
                             <input 
                                 type="text" value={memoInput} onChange={e => setMemoInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveMemo()}
-                                className="flex-1 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 text-sm focus:border-yellow-500 outline-none" placeholder="Tag..."
+                                className="flex-1 bg-yellow-50 border border-yellow-200 rounded px-2 py-1 text-sm focus:border-yellow-500 outline-none" placeholder={t.placeholder_tag}
                             />
-                            <button onClick={handleSaveMemo} className="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-2 rounded text-xs font-bold">Save</button>
+                            <button onClick={handleSaveMemo} className="bg-yellow-100 hover:bg-yellow-200 text-yellow-700 px-2 rounded text-xs font-bold">{t.btn_save}</button>
                         </div>
                     </div>
                     <div className="flex flex-col items-center">
-                        <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">Color</label>
+                        <label className="text-[10px] text-slate-500 uppercase font-bold block mb-1">{t.label_color}</label>
                         <input type="color" value={colorInput} onChange={handleColorChange} className="w-8 h-8 rounded cursor-pointer border-0 p-0 shadow-sm" />
                     </div>
                 </div>
 
                 <div>
-                   <div className="text-xs text-slate-500 uppercase font-bold mb-1 ml-1">Address</div>
+                   <div className="text-xs text-slate-500 uppercase font-bold mb-1 ml-1">{t.label_address}</div>
                    <div onClick={() => handleCopy(selectedNode.id, "Address")} className="text-sm font-mono break-all text-blue-600 cursor-pointer hover:bg-white bg-white p-3 rounded-lg border border-slate-200 shadow-sm transition-all hover:shadow-md hover:border-blue-300" title="Click to copy">
                      {selectedNode.id}
                    </div>
@@ -184,7 +204,7 @@ export const DetailPanel = () => {
 
                 <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <div className="text-[10px] text-green-600 uppercase font-bold mb-1">USDT (TRC20)</div>
+                        <div className="text-[10px] text-green-600 uppercase font-bold mb-1">{t.bal_usdt}</div>
                         <div className="text-lg font-bold text-slate-800 truncate h-7 flex items-center">
                             {nodeLoading || !accountInfo ? <Skeleton className="w-24 h-5" /> : (
                                 <span>{accountInfo.balance_usdt.toLocaleString()} <span className="text-xs text-slate-400 font-normal">$</span></span>
@@ -192,7 +212,7 @@ export const DetailPanel = () => {
                         </div>
                     </div>
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <div className="text-[10px] text-blue-600 uppercase font-bold mb-1">TRX Balance</div>
+                        <div className="text-[10px] text-blue-600 uppercase font-bold mb-1">{t.bal_trx}</div>
                         <div className="text-lg font-bold text-slate-800 truncate h-7 flex items-center">
                             {nodeLoading || !accountInfo ? <Skeleton className="w-24 h-5" /> : (
                                 <span>{accountInfo.balance_trx.toLocaleString()}</span>
@@ -203,9 +223,9 @@ export const DetailPanel = () => {
 
                 <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                    <h3 className="text-xs font-bold text-slate-700 p-3 border-b border-slate-100 flex justify-between bg-slate-50">
-                       <span>Recent Transactions</span>
+                       <span>{t.recent_tx}</span>
                        <span className="font-normal text-slate-400">
-                           {nodeLoading ? 'Fetching...' : `${history.length} items`}
+                           {nodeLoading ? t.loading : `${history.length} ${t.items}`}
                        </span>
                    </h3>
                    <div className="max-h-80 overflow-y-auto min-h-[100px]">
@@ -224,7 +244,7 @@ export const DetailPanel = () => {
                       ) : (
                           <table className="w-full text-xs text-left table-fixed">
                               <tbody className="divide-y divide-slate-100">
-                                 {history.length === 0 ? <tr><td colSpan={3} className="p-4 text-center text-slate-400">No transactions {'>'} 1.0</td></tr> :
+                                 {history.length === 0 ? <tr><td colSpan={3} className="p-4 text-center text-slate-400">{t.no_tx_limit}</td></tr> :
                                   history.map((tx) => {
                                       const isIn = tx.receiver === selectedNode.id;
                                       const otherAddr = isIn ? tx.sender : tx.receiver;
@@ -244,7 +264,7 @@ export const DetailPanel = () => {
                                                     </div>
                                                     {tx.riskLabel && <span className="bg-red-100 text-red-600 text-[9px] px-1.5 rounded-full font-bold truncate max-w-[60px] border border-red-200">{tx.riskLabel}</span>}
                                                   </div>
-                                                  {isIn && <button onClick={() => handleAddFromHistory(otherAddr)} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 rounded hover:bg-blue-100 mb-1 inline-block">+ Trace</button>}
+                                                  {isIn && <button onClick={() => handleAddFromHistory(otherAddr)} className="text-[10px] bg-blue-50 text-blue-600 px-1.5 rounded hover:bg-blue-100 mb-1 inline-block">+ {t.btn_trace}</button>}
                                                   <div onClick={() => handleCopy(tx.txID, "TX Hash")} className="text-[9px] text-slate-400 font-mono cursor-pointer hover:text-slate-600 hover:underline truncate" title={`TX: ${tx.txID}`}>TX: {tx.txID.slice(0, 8)}...</div>
                                               </td>
                                               <td className="p-3 text-right align-top w-24 font-bold text-slate-700">
@@ -265,13 +285,13 @@ export const DetailPanel = () => {
             <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <div className="text-[10px] text-green-600 uppercase font-bold mb-1">Total USDT</div>
+                        <div className="text-[10px] text-green-600 uppercase font-bold mb-1">{t.total_usdt}</div>
                         <div className="text-lg font-black text-slate-800 tracking-tight">
                             {linkTotalUSDT.toLocaleString()} <span className="text-xs font-normal text-slate-400">$</span>
                         </div>
                     </div>
                     <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                        <div className="text-[10px] text-blue-600 uppercase font-bold mb-1">Total TRX</div>
+                        <div className="text-[10px] text-blue-600 uppercase font-bold mb-1">{t.total_trx}</div>
                         <div className="text-lg font-black text-slate-800 tracking-tight">
                             {linkTotalTRX.toLocaleString()}
                         </div>
@@ -280,14 +300,14 @@ export const DetailPanel = () => {
 
                 <div className="flex items-center justify-between text-xs bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
                     <div className="flex flex-col w-24">
-                        <span className="text-[9px] text-slate-400 uppercase font-bold mb-1">From</span>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold mb-1">{t.label_from}</span>
                         <span className="font-mono truncate cursor-pointer hover:text-blue-600 bg-slate-50 p-1 rounded" title={(selectedLink.source as any).id} onClick={() => handleCopy((selectedLink.source as any).id, "Address")}>
                             {(selectedLink.source as any).id}
                         </span>
                     </div>
                     <span className="text-slate-300">──▶</span>
                     <div className="flex flex-col w-24 text-right">
-                        <span className="text-[9px] text-slate-400 uppercase font-bold mb-1">To</span>
+                        <span className="text-[9px] text-slate-400 uppercase font-bold mb-1">{t.label_to}</span>
                         <span className="font-mono truncate cursor-pointer hover:text-blue-600 bg-slate-50 p-1 rounded" title={(selectedLink.target as any).id} onClick={() => handleCopy((selectedLink.target as any).id, "Address")}>
                             {(selectedLink.target as any).id}
                         </span>
@@ -296,14 +316,14 @@ export const DetailPanel = () => {
 
                 <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                    <h3 className="text-xs font-bold text-slate-700 p-3 border-b border-slate-100 bg-slate-50 flex justify-between">
-                       <span>Included Transactions</span>
-                       <span className="font-normal text-slate-400">{linkTransactions.length} items</span>
+                       <span>{t.included_tx}</span>
+                       <span className="font-normal text-slate-400">{linkTransactions.length} {t.items}</span>
                    </h3>
                    <div className="max-h-80 overflow-y-auto">
                       <table className="w-full text-xs text-left table-fixed">
                           <tbody className="divide-y divide-slate-100">
                               {linkTransactions.length === 0 ? (
-                                  <tr><td colSpan={3} className="p-4 text-center text-slate-400">No details available</td></tr>
+                                  <tr><td colSpan={3} className="p-4 text-center text-slate-400">{t.no_details}</td></tr>
                               ) : (
                                   linkTransactions.map((tx: any) => {
                                       const date = new Date(tx.timestamp).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabaseClient';
 import type { GraphNode, GraphLink } from '../types/graph';
+import { fetchNodeExpansion } from '../services/tronScanner';
 
 export interface ExtendedNode extends GraphNode {
   createdAt: number;
@@ -26,18 +27,22 @@ interface GlobalState {
   selectedNode: ExtendedNode | null;
   selectedLink: GraphLink | null;
   
-  // Layout & Physics
   layoutMode: 'physics' | 'horizontal';
   isPhysicsActive: boolean;
-  
-  // Selection
   selectedIds: Set<string>;
+  pendingClusterNodes: string[];
+  language: 'ko' | 'en';
   
-  // [New] Context Menu Integration
-  pendingClusterNodes: string[]; // 우클릭으로 클러스터링 요청된 노드들
+  // [New] 로딩 및 확장 관련
+  expandingNodes: Set<string>;
 
   // Actions
+  setLanguage: (lang: 'ko' | 'en') => void;
   setSession: (session: any) => void;
+  
+  // [New] 로그아웃 함수 추가
+  signOut: () => Promise<void>;
+
   setGraphData: (data: { nodes: ExtendedNode[], links: GraphLink[] }) => void;
   setSelectedNode: (node: ExtendedNode | null) => void;
   setSelectedLink: (link: GraphLink | null) => void;
@@ -58,13 +63,68 @@ interface GlobalState {
   selectNodesByIds: (ids: string[]) => void;
   clearSelection: () => void;
 
-  // [New] Actions
   setPendingClusterNodes: (ids: string[]) => void;
   clearPendingClusterNodes: () => void;
 
   saveSession: (title: string, mode: string) => Promise<boolean>;
   loadSession: (sessionId: string) => Promise<void>;
+
+  expandNode: (nodeId: string, direction: 'in' | 'out', sortType: 'time' | 'value') => Promise<void>;
 }
+
+// [Helper 1] 링크 초기화
+const sanitizeLinks = (links: any[]) => {
+    return links.map((link: any) => { 
+        return {
+            ...link,
+            source: (link.source && typeof link.source === 'object') ? link.source.id : link.source,
+            target: (link.target && typeof link.target === 'object') ? link.target.id : link.target
+        };
+    });
+};
+
+// [Helper 2] 핫월렛 감지 로직
+const applyHotWalletLogic = (nodes: ExtendedNode[], links: any[]): ExtendedNode[] => {
+    const hotWalletMap = new Map<string, string>(); 
+    
+    nodes.forEach(node => {
+        if (!node.label) return;
+        const normalizedLabel = node.label.toLowerCase().replace(/\s/g, ''); 
+        if (normalizedLabel.includes('hotwallet')) {
+            hotWalletMap.set(node.id, node.label);
+        }
+    });
+
+    if (hotWalletMap.size === 0) return nodes;
+
+    const depositorMap = new Map<string, { color: string, memo: string }>();
+
+    links.forEach((link: any) => { 
+        const sourceId = (link.source && typeof link.source === 'object') ? link.source.id : link.source;
+        const targetId = (link.target && typeof link.target === 'object') ? link.target.id : link.target;
+
+        if (hotWalletMap.has(targetId)) {
+            const targetLabel = hotWalletMap.get(targetId);
+            depositorMap.set(sourceId, {
+                color: '#fca5a5', 
+                memo: `Deposit Address of ${targetLabel}`
+            });
+        }
+    });
+
+    return nodes.map(node => {
+        if (depositorMap.has(node.id)) {
+            const update = depositorMap.get(node.id)!;
+            return { 
+                ...node, 
+                customColor: update.color, 
+                memo: update.memo,
+                x: node.x, y: node.y, fx: node.fx, fy: node.fy, vx: node.vx, vy: node.vy
+            };
+        }
+        return node;
+    });
+};
 
 export const useGlobalStore = create<GlobalState>((set, get) => ({
   graphData: { nodes: [], links: [] },
@@ -76,9 +136,24 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
   isPhysicsActive: true,
   selectedIds: new Set(),
   pendingClusterNodes: [],
-
+  expandingNodes: new Set(),
+  language: 'ko',
+  
+  setLanguage: (lang) => set({ language: lang }),
   setSession: (session) => set({ session }),
-  setGraphData: (data) => set({ graphData: data }),
+
+  // [Fix] signOut 구현 추가
+  signOut: async () => {
+      await supabase.auth.signOut();
+      set({ session: null });
+  },
+  
+  setGraphData: (data) => {
+      const cleanLinks = sanitizeLinks(data.links);
+      const processedNodes = applyHotWalletLogic(data.nodes, cleanLinks);
+      set({ graphData: { nodes: processedNodes, links: cleanLinks } });
+  },
+
   setSelectedNode: (node) => set({ selectedNode: node, selectedLink: null }),
   setSelectedLink: (link) => set({ selectedLink: link, selectedNode: null }),
 
@@ -86,43 +161,58 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
       const nodeMap = new Map(state.graphData.nodes.map(n => [n.id, n]));
       newNodes.forEach(newNode => {
         const existing = nodeMap.get(newNode.id);
-        if (existing) nodeMap.set(newNode.id, { ...existing, ...newNode, x: existing.x, y: existing.y, fx: existing.fx, fy: existing.fy });
+        if (existing) {
+            nodeMap.set(newNode.id, { ...existing, ...newNode, x: existing.x, y: existing.y, fx: existing.fx, fy: existing.fy, vx: existing.vx, vy: existing.vy });
+        }
         else nodeMap.set(newNode.id, newNode);
       });
-      return { graphData: { ...state.graphData, nodes: Array.from(nodeMap.values()) } };
+      
+      let mergedNodes = Array.from(nodeMap.values());
+      const cleanLinks = sanitizeLinks(state.graphData.links);
+      mergedNodes = applyHotWalletLogic(mergedNodes, cleanLinks);
+
+      return { graphData: { nodes: mergedNodes, links: cleanLinks } };
   }),
   
   addLinks: (newLinks) => set((state) => {
-      const updatedLinks = [...state.graphData.links];
-      newLinks.forEach(link => {
-        const existingIdx = updatedLinks.findIndex(l => {
-          const s = (typeof l.source === 'object') ? (l.source as any).id : l.source;
-          const t = (typeof l.target === 'object') ? (l.target as any).id : l.target;
-          return (s === link.source && t === link.target) || (s === link.target && t === link.source);
+      const currentLinks = sanitizeLinks(state.graphData.links);
+      
+      newLinks.forEach((link: any) => { 
+        const linkSource = (typeof link.source === 'object') ? link.source.id : link.source;
+        const linkTarget = (typeof link.target === 'object') ? link.target.id : link.target;
+
+        const existingIdx = currentLinks.findIndex((l: any) => {
+          const s = (typeof l.source === 'object') ? l.source.id : l.source;
+          const t = (typeof l.target === 'object') ? l.target.id : l.target;
+          return (s === linkSource && t === linkTarget) || (s === linkTarget && t === linkSource);
         });
+
         if (existingIdx > -1) {
-            updatedLinks[existingIdx].value += link.value;
-            // @ts-ignore
+            currentLinks[existingIdx].value += link.value;
             if (link.txDetails) {
-                 // @ts-ignore
-                 if(!updatedLinks[existingIdx].txDetails) updatedLinks[existingIdx].txDetails = [];
-                 // @ts-ignore
-                 updatedLinks[existingIdx].txDetails.push(...link.txDetails);
+                 if(!currentLinks[existingIdx].txDetails) currentLinks[existingIdx].txDetails = [];
+                 currentLinks[existingIdx].txDetails.push(...link.txDetails);
             }
         }
         else { 
-            // @ts-ignore
             if (!link.txDetails) link.txDetails = [];
-            updatedLinks.push(link); 
+            currentLinks.push(link); 
         }
       });
-      return { graphData: { ...state.graphData, links: updatedLinks } };
+
+      const processedNodes = applyHotWalletLogic(state.graphData.nodes, currentLinks);
+
+      return { graphData: { nodes: processedNodes, links: currentLinks } };
   }),
 
   removeNode: (nodeId) => set((state) => ({
       graphData: {
           nodes: state.graphData.nodes.filter(n => n.id !== nodeId),
-          links: state.graphData.links.filter(l => (l.source as any).id !== nodeId && (l.target as any).id !== nodeId && l.source !== nodeId && l.target !== nodeId)
+          links: state.graphData.links.filter((l: any) => { 
+              const s = (typeof l.source === 'object') ? l.source.id : l.source;
+              const t = (typeof l.target === 'object') ? l.target.id : l.target;
+              return s !== nodeId && t !== nodeId;
+          })
       },
       selectedNode: state.selectedNode?.id === nodeId ? null : state.selectedNode
   })),
@@ -223,13 +313,41 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
       const { data, error } = await supabase.from('saved_sessions').select('graph_data').eq('id', sessionId).single();
       if (error || !data) return;
       const { nodes, links, clusters, layoutMode } = data.graph_data;
+      
+      const cleanLinks = sanitizeLinks(links);
+      const processedNodes = applyHotWalletLogic(nodes, cleanLinks);
+      
       set({ 
-          graphData: { nodes, links }, 
+          graphData: { nodes: processedNodes, links: cleanLinks }, 
           clusters: clusters || [], 
           layoutMode: layoutMode || 'physics',
           isPhysicsActive: true,
           selectedNode: null, 
           selectedLink: null 
       });
+  },
+
+  expandNode: async (nodeId, direction, sortType) => {
+      set(state => {
+          const newSet = new Set(state.expandingNodes);
+          newSet.add(nodeId);
+          return { expandingNodes: newSet };
+      });
+
+      try {
+          const { nodes, links } = await fetchNodeExpansion(nodeId, direction, sortType);
+
+          if (nodes.length > 0) get().addNodes(nodes);
+          if (links.length > 0) get().addLinks(links);
+
+      } catch (e) {
+          console.error(e);
+      } finally {
+          set(state => {
+              const newSet = new Set(state.expandingNodes);
+              newSet.delete(nodeId);
+              return { expandingNodes: newSet };
+          });
+      }
   }
 }));
