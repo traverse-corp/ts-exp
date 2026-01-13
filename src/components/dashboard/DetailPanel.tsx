@@ -113,7 +113,7 @@ export const DetailPanel = () => {
   return (
     <>
     {toastMsg && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg text-sm z-[70] animate-fade-in-up pointer-events-none">
+        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full shadow-lg text-sm z-[60] animate-fade-in-up pointer-events-none">
             {toastMsg}
         </div>
     )}
@@ -128,7 +128,7 @@ export const DetailPanel = () => {
         />
     )}
 
-    <div className="absolute right-4 top-16 bottom-4 w-[420px] bg-white/95 backdrop-blur-md border border-slate-300 shadow-2xl rounded-xl z-[60] flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+    <div className="absolute right-4 top-16 bottom-4 w-[420px] bg-white/95 backdrop-blur-md border border-slate-300 shadow-2xl rounded-xl z-[100] flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
       
       {/* Header */}
       <div className="p-4 border-b border-slate-200 bg-white shadow-sm z-10 space-y-3">
