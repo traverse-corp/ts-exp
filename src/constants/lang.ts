@@ -101,7 +101,7 @@ export const TRANSLATIONS = {
     card_alert_count: "심각 단계 경보",
 
     // Sanction Data
-    sanc_title: "제재 대상 KYT 데이터베이스",
+    sanc_title: "자금세탁 위험 노출 분포",
     sanc_ofac: "OFAC/OFSI 제재 대상",
     sanc_kofiu: "KoFIU 미신고 가상자산사업자",
     sanc_crime: "국내외 주요 범죄 지갑",
@@ -146,6 +146,10 @@ export const TRANSLATIONS = {
     btn_generate: "AI 보고서 생성 시작",
     btn_copy_report: "보고서 전체 복사",
     msg_copied: "보고서가 클립보드에 복사되었습니다.",
+    aml_history: "자금세탁 위험 노출 이력",
+    realtime_data_table: "실시간 자산 입출금 모니터링",
+    asset_portfolio: '운영 자산 현황',
+
   },
   en: {
     // Common
@@ -249,7 +253,7 @@ export const TRANSLATIONS = {
     card_alert_count: "Critical Alerts",
 
     // Sanction Data
-    sanc_title: "Global Sanction Database Status",
+    sanc_title: "AML Risk Exposure Ratio",
     sanc_ofac: "OFAC/OFSI Sanctions",
     sanc_kofiu: "KoFIU Watchlist",
     sanc_crime: "Major Criminal Addresses",
@@ -293,5 +297,10 @@ export const TRANSLATIONS = {
     btn_generate: "Generate Report with AI",
     btn_copy_report: "Copy to Clipboard",
     msg_copied: "Report copied to clipboard.",
+    aml_history: "History of AML Risk Exposure",
+    realtime_data_table: 'Real-time Inflow/Outflow Monitor',
+    asset_portfolio: 'Asset Portfolio Status',
+
+
   }
 };

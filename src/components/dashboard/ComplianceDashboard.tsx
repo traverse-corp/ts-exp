@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, type JSX } from 'react';
 import { useGlobalStore } from '../../stores/useGlobalStore';
 import { TRANSLATIONS } from '../../constants/lang';
 import { fetchRecentHistory } from '../../services/tronScanner';
@@ -18,40 +18,41 @@ const generateMockCI = (address: string) => {
     return `CI_${hex}9X2B${address.slice(0,3).toUpperCase()}`; 
 };
 
-// --- [Types] ---
-interface LabelInfo {
-    label: string;
-    riskLevel: string;
-}
-
+// --- [Types & Icons] ---
+interface LabelInfo { label: string; riskLevel: string; }
 interface ExtendedTxRow {
-    id: string; // Unique Key for React List
-    timestamp: number;
-    type: 'INFLOW' | 'OUTFLOW';
-    amount: number;
-    token: string;
-    
-    // Address & Label Data for each Hop
-    hopMinus2?: string;
-    hopMinus1?: string;
-    hopMe: string;
-    hopPlus1?: string;
-    hopPlus2?: string;
-
-    // Loading State for this specific row
+    id: string; timestamp: number; type: 'INFLOW' | 'OUTFLOW'; amount: number; token: string;
+    hopMinus2?: string; hopMinus1?: string; hopMe: string; hopPlus1?: string; hopPlus2?: string;
     isLoadingExtended: boolean;
 }
 
-// --- [Icons] ---
 const DashIcons = {
     Wallet: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>,
     PieChart: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" /></svg>,
     Refresh: () => <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
-    Expanded: () => <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+    Expanded: () => <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>,
+    BarChart: () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
 };
 
 const RATES = { TRX: 450, USDT: 1450 };
-const SANCTION_DATA = { ofac: 14205, kofiu: 16843910, crime: 3504589 };
+
+// -----------------------------------------------------------------------------
+// [DATA] 위험 노출 이력 데이터
+// -----------------------------------------------------------------------------
+const RISK_EXPOSURE_DATA = [
+    { id: 1, label: "국제제재대상 (Sanctions)", count: 654, volume: 322815134, risk: 'severe', color: '#ef4444' }, // Red
+    { id: 2, label: "FIU 미신고 VASP", count: 1045, volume: 506945606, risk: 'high', color: '#f18306ff' }, // Orange
+    { id: 3, label: "마약 거래", count: 0, volume: 0, risk: 'high', color: '#eab308' }, // Yellow
+    { id: 4, label: "불법 음란물", count: 0, volume: 0, risk: 'medium', color: '#84cc16' }, // Lime
+    { id: 5, label: "불법 도박", count: 1747, volume: 322907950, risk: 'high', color: '#06b6d4' }, // Cyan
+    { id: 6, label: "보이스피싱", count: 0, volume: 0, risk: 'high', color: '#3b82f6' }, // Blue
+    { id: 7, label: "기타 사기", count: 1, volume: 470323, risk: 'medium', color: '#6366f1' } // Indigo
+];
+
+const MAX_COUNT = Math.max(...RISK_EXPOSURE_DATA.map(d => d.count));
+const MAX_VOL = Math.max(...RISK_EXPOSURE_DATA.map(d => d.volume));
+const TOTAL_RISK_COUNT = RISK_EXPOSURE_DATA.reduce((acc, cur) => acc + cur.count, 0);
+const SANCTION_DATA = { ofac: 14205, kofiu: 16943992, crime: 3129205 };
 
 export const ComplianceDashboard = () => {
   const { 
@@ -68,8 +69,6 @@ export const ComplianceDashboard = () => {
   const [inputWallet, setInputWallet] = useState('');
   const [loading, setLoading] = useState(false);
   const [labelMap, setLabelMap] = useState<Record<string, LabelInfo>>({});
-  
-  // Extended Mode Data
   const [extendedTxs, setExtendedTxs] = useState<ExtendedTxRow[]>([]);
   
   const [portfolio, setPortfolio] = useState<any>({
@@ -85,30 +84,16 @@ export const ComplianceDashboard = () => {
       return 'bg-slate-300';
   };
 
+  const handleCopyAddr = (address: string) => { navigator.clipboard.writeText(address); };
+
   // --- Actions ---
   const handleAddWallet = () => { if(inputWallet) { addOpWallet(inputWallet); setInputWallet(''); } };
   const handleInstantTrace = (address: string) => { setTraceAddr(address); setMode('autotracer'); };
-  const handleOpenReport = (tx: any) => { 
-      // 보고서 생성 시 필요한 기본 포맷으로 변환해서 전달
-      openReport({ ...tx, counterparty: tx.counterparty || tx.hopMinus1 || tx.hopPlus1 }); 
-  };
-  const handleCheckKYC = (address: string) => {
-      const ci = generateMockCI(address);
-      window.prompt(`[KYC 정보 확인]\n\n해당 고객의 식별값(CI)은 아래와 같습니다.`, ci);
-  };
-  const handleFreeze = (address: string) => {
-      const ci = generateMockCI(address);
-      if (window.confirm(`[계좌 동결 경고 ]\n\n식별된 CI: ${ci}\n\n해당 유저와 관련된 모든 계정 및 계좌에 대한 동결 조치를 진행하시겠습니까?`)) {
-          alert("[System] 현재 서비스 준비 중입니다.\n(Integration pending with Core Banking System)");
-      }
-  };
-  const handleCopyAddr = (address: string) => {
-      navigator.clipboard.writeText(address);
-      // 토스트 메시지 대신 간단한 콘솔 로그 (또는 UI 피드백 추가 가능)
-      console.log('Copied:', address); 
-  };
+  const handleOpenReport = (tx: any) => { openReport({ ...tx, counterparty: tx.counterparty || tx.hopMinus1 || tx.hopPlus1 }); };
+  const handleCheckKYC = (address: string) => { window.prompt(`[KYC 정보 확인]\n\nCI:`, generateMockCI(address)); };
+  const handleFreeze = (address: string) => { if(window.confirm(`CI: ${generateMockCI(address)}\n동결하시겠습니까?`)) alert("서비스 준비 중입니다."); };
 
-  // 1. Portfolio Logic (10m)
+  // 1. Portfolio Logic
   useEffect(() => {
     const fetchBalances = async () => {
         if (opWallets.length === 0) return;
@@ -143,18 +128,14 @@ export const ComplianceDashboard = () => {
 
   // 2. Monitoring Logic
   useEffect(() => {
-      // Async task controller to prevent updates on unmounted components or mode switch
       let isMounted = true;
-
       const loadData = async () => {
           if (opWallets.length === 0) return;
-          if (monitorMode === 'standard') setLoading(true); // Standard만 전체 로딩 표시
+          if (monitorMode === 'standard') setLoading(true);
 
           try {
-              // (Step A) 기본 데이터 (내 지갑 관련 Txs)
               const promises = opWallets.map(addr => fetchRecentHistory(addr));
               const results = await Promise.all(promises);
-              
               let allTxs: any[] = [];
               results.forEach((txs, idx) => {
                   const ownerWallet = opWallets[idx];
@@ -168,11 +149,8 @@ export const ComplianceDashboard = () => {
               });
               allTxs.sort((a, b) => b.timestamp - a.timestamp);
 
-              // ---------------- [STANDARD MODE] ----------------
               if (monitorMode === 'standard') {
                   const slicedTxs = allTxs.slice(0, 100);
-                  
-                  // Labeling
                   const uniqueAddresses = Array.from(new Set(slicedTxs.map(tx => tx.counterparty)));
                   if (uniqueAddresses.length > 0) {
                       const { data: labels } = await supabase.from('address_labels').select('address, label_name, risk_level').in('address', uniqueAddresses);
@@ -181,63 +159,36 @@ export const ComplianceDashboard = () => {
                       setLabelMap(prev => ({ ...prev, ...newLabels }));
                   }
                   if (isMounted) setDashboardData(slicedTxs, new Date());
-              } 
-              // ---------------- [EXTENDED MODE] ----------------
-              else {
+              } else {
                   const targetTxs = allTxs.slice(0, 10);
-                  
-                  // 1. 기본 골격 먼저 렌더링 (로딩 중 상태)
                   const initialRows: ExtendedTxRow[] = targetTxs.map((tx, i) => ({
-                      id: tx.txID + i, // Unique key
-                      timestamp: tx.timestamp,
-                      type: tx.isCustomer ? 'INFLOW' : 'OUTFLOW',
-                      amount: tx.amount,
-                      token: tx.token,
-                      hopMe: tx.ownerWallet,
-                      hopMinus1: tx.isCustomer ? tx.sender : undefined,
-                      hopPlus1: !tx.isCustomer ? tx.receiver : undefined,
-                      isLoadingExtended: true // 로딩 표시 시작
+                      id: tx.txID + i, timestamp: tx.timestamp, type: tx.isCustomer ? 'INFLOW' : 'OUTFLOW', amount: tx.amount, token: tx.token,
+                      hopMe: tx.ownerWallet, hopMinus1: tx.isCustomer ? tx.sender : undefined, hopPlus1: !tx.isCustomer ? tx.receiver : undefined,
+                      isLoadingExtended: true
                   }));
-                  
                   if (isMounted) setExtendedTxs(initialRows);
 
-                  // 2. 한 줄씩(Row-by-Row) 확장 데이터 조회 및 업데이트
                   targetTxs.forEach(async (tx, index) => {
                       if (!isMounted) return;
-
-                      let hopMinus2 = undefined;
-                      let hopPlus2 = undefined;
+                      let hopMinus2: string | undefined, hopPlus2: string | undefined;
                       const addressesToLabel: string[] = [];
-
-                      // (Hop -1) 라벨 조회 대상 추가
                       if (tx.isCustomer && tx.sender) addressesToLabel.push(tx.sender);
-                      // (Hop +1) 라벨 조회 대상 추가
                       if (!tx.isCustomer && tx.receiver) addressesToLabel.push(tx.receiver);
 
-                      // --- 확장 조회 ---
                       if (tx.isCustomer) {
-                          // Inflow: Hop -2 찾기
                           try {
                               const senderHistory = await fetchRecentHistory(tx.sender);
                               const sourceTx = senderHistory.find(h => h.receiver === tx.sender && h.timestamp < tx.timestamp);
-                              if (sourceTx) {
-                                  hopMinus2 = sourceTx.sender;
-                                  addressesToLabel.push(hopMinus2); // Hop -2도 라벨 조회
-                              }
+                              if (sourceTx) { hopMinus2 = sourceTx.sender; addressesToLabel.push(hopMinus2); }
                           } catch {}
                       } else {
-                          // Outflow: Hop +2 찾기
                           try {
                               const receiverHistory = await fetchRecentHistory(tx.receiver);
                               const destTx = receiverHistory.find(h => h.sender === tx.receiver && h.timestamp > tx.timestamp);
-                              if (destTx) {
-                                  hopPlus2 = destTx.receiver;
-                                  addressesToLabel.push(hopPlus2); // Hop +2도 라벨 조회
-                              }
+                              if (destTx) { hopPlus2 = destTx.receiver; addressesToLabel.push(hopPlus2); }
                           } catch {}
                       }
 
-                      // --- 라벨링 (Supabase) ---
                       if (addressesToLabel.length > 0) {
                           const { data: labels } = await supabase.from('address_labels').select('address, label_name, risk_level').in('address', addressesToLabel);
                           if (labels && labels.length > 0) {
@@ -248,98 +199,53 @@ export const ComplianceDashboard = () => {
                               });
                           }
                       }
-
-                      // --- 해당 Row 업데이트 (Progressive Update) ---
                       if (isMounted) {
                           setExtendedTxs(prev => {
                               const newArr = [...prev];
-                              // 인덱스가 일치하고 ID가 같은지 확인
                               if (newArr[index] && newArr[index].id === (tx.txID + index)) {
-                                  newArr[index] = {
-                                      ...newArr[index],
-                                      hopMinus2,
-                                      hopPlus2,
-                                      isLoadingExtended: false // 로딩 끝
-                                  };
+                                  newArr[index] = { ...newArr[index], hopMinus2, hopPlus2, isLoadingExtended: false };
                               }
                               return newArr;
                           });
                       }
                   });
               }
-
           } catch (e) { console.error(e); } finally { if(isMounted) setLoading(false); }
       };
 
       loadData();
-      const intervalMs = monitorMode === 'standard' ? 30000 : 180000;
+      const intervalMs = monitorMode === 'standard' ? 30000 : 120000;
       const interval = setInterval(loadData, intervalMs);
       return () => { isMounted = false; clearInterval(interval); };
   }, [opWallets, monitorMode]);
 
-
-const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' | 'source' | 'dest', txData?: any) => {
+  const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' | 'source' | 'dest', txData?: any) => {
       if (!address) return <span className="text-slate-300">-</span>;
-
       const labelInfo = labelMap[address];
       const hasLabel = !!labelInfo;
-      
       let displayLabel = labelInfo?.label || 'Unknown';
-      let bgClass = "bg-slate-100 text-slate-500"; // Default (Unknown)
+      let bgClass = "bg-slate-100 text-slate-500";
 
-      // 1. Customer (Inflow Sender)
-      if (type === 'customer') {
-          displayLabel = 'Customer (Deposit)';
-          bgClass = "bg-green-50 text-green-700 border-green-100";
-      }
-      // 2. Known Entity (Labeled)
-      else if (hasLabel) {
-          bgClass = "bg-indigo-50 text-indigo-700 border-indigo-100";
-      }
-
-      // 3. [NEW] Deposit Address Logic (Hop +1이 대상이고, Hop +2에 라벨이 있는 경우)
-      // 조건: 현재 렌더링 중인 주소가 Hop+1이고, Hop+2 주소가 존재하며, Hop+2에 라벨이 있을 때
+      if (type === 'customer') { displayLabel = 'Customer (Deposit)'; bgClass = "bg-green-50 text-green-700 border-green-100"; }
+      else if (hasLabel) { bgClass = "bg-indigo-50 text-indigo-700 border-indigo-100"; }
       if (txData && address === txData.hopPlus1 && txData.hopPlus2) {
           const nextHopLabel = labelMap[txData.hopPlus2]?.label;
-          if (nextHopLabel) {
-              displayLabel = `입금 주소 : ${nextHopLabel}`;
-              // Hot Wallet 입금 주소 느낌의 붉은색/장미색 스타일
-              bgClass = "bg-rose-50 text-rose-700 border-rose-100 font-bold";
-          }
+          if (nextHopLabel) { displayLabel = `입금 주소 : ${nextHopLabel}`; bgClass = "bg-rose-50 text-rose-700 border-rose-100 font-bold"; }
       }
 
       return (
           <div className="relative group flex justify-center w-full">
-              <div 
-                  onClick={() => handleCopyAddr(address)}
-                  className={`border px-2 py-1 rounded truncate text-[10px] font-bold cursor-pointer hover:scale-105 transition-transform max-w-[120px] w-full text-center ${bgClass}`} 
-                  title={`${address} (Click to Copy)`}
-              >
+              <div onClick={() => handleCopyAddr(address)} className={`border px-2 py-1 rounded truncate text-[10px] font-bold cursor-pointer hover:scale-105 transition-transform max-w-[120px] w-full text-center ${bgClass}`} title={`${address} (Click to Copy)`}>
                   {displayLabel === 'Unknown' ? `${address.slice(0,6)}...` : displayLabel}
               </div>
-
-              {/* Hover Menu (No Emojis) */}
               <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 hidden group-hover:flex flex-col gap-1 bg-white shadow-xl border border-slate-200 rounded p-1.5 z-50 w-36 animate-in fade-in slide-in-from-top-1 duration-200">
                   <div className="text-[9px] font-mono text-slate-400 border-b border-slate-100 pb-1 mb-1 truncate text-center">{address}</div>
-                  
-                  <button onClick={() => handleInstantTrace(address)} className="text-[10px] bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 font-bold border border-amber-100 w-full text-left">
-                      Instant Trace
-                  </button>
-                  <button 
-                      onClick={() => openReport({ ...txData, counterparty: address })} 
-                      className="text-[10px] bg-slate-50 text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-bold border border-slate-200 w-full text-left"
-                  >
-                      STR Report
-                  </button>
-                  
+                  <button onClick={() => handleInstantTrace(address)} className="text-[10px] bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 font-bold border border-amber-100 w-full text-left">Instant Trace</button>
+                  <button onClick={() => openReport({ ...txData, counterparty: address })} className="text-[10px] bg-slate-50 text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-bold border border-slate-200 w-full text-left">STR Report</button>
                   {type === 'customer' && (
                       <>
-                          <button onClick={() => handleCheckKYC(address)} className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100 font-bold border border-indigo-100 w-full text-left">
-                              Check KYC
-                          </button>
-                          <button onClick={() => handleFreeze(address)} className="text-[10px] bg-red-50 text-red-700 px-2 py-1 rounded hover:bg-red-100 font-bold border border-red-100 w-full text-left">
-                              Freeze Wallet
-                          </button>
+                          <button onClick={() => handleCheckKYC(address)} className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100 font-bold border border-indigo-100 w-full text-left">Check KYC</button>
+                          <button onClick={() => handleFreeze(address)} className="text-[10px] bg-red-50 text-red-700 px-2 py-1 rounded hover:bg-red-100 font-bold border border-red-100 w-full text-left">Freeze Wallet</button>
                       </>
                   )}
               </div>
@@ -347,80 +253,208 @@ const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' 
       );
   };
 
-
   return (
     <div className="w-full h-full bg-slate-100 px-8 pb-8 pt-32 overflow-y-auto custom-scrollbar font-sans text-slate-800">
         <ReportPanel />
 
-        {/* Header & KPI (기존 코드 유지) */}
+{/* Header */}
         <div className="mb-8 flex justify-between items-end">
             <div>
                 <div className="flex items-baseline gap-3 mb-1">
                     <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                        <span className="text-blue-700">TranSight</span> Enterprise for <span className="text-blue-700">{userName}</span>
+                        <span className="text-blue-700">TranSight</span> Enterprise
                     </h1>
+                    <span className="text-sm font-bold text-slate-500 animate-in slide-in-from-left-2 duration-500 delay-150">
+                        안녕하세요, <span className="text-indigo-600 border-b border-indigo-200 pb-0.5">{userName}</span> 담당자님.
+                    </span>
                 </div>
                 <p className="text-slate-500 font-medium text-sm">{t.dash_subtitle}</p>
             </div>
-            <div className="flex gap-4">
-                 <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right">
-                    <div className="text-[10px] text-slate-400 font-bold uppercase">{t.card_risk_score}</div>
-                    <div className="text-xl font-black text-green-500">Low (12/100)</div>
+            
+            {/* KPI Cards */}
+            <div className="flex gap-4 h-full items-stretch">
+                
+                {/* 1. Risk Score */}
+                 <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right flex flex-col justify-center min-w-[120px]">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">{t.card_risk_score}</div>
+                    <div className="text-xl font-black text-green-500">Low (12)</div>
                 </div>
-                <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right">
-                    <div className="text-[10px] text-slate-400 font-bold uppercase">{t.card_monitored_vol}</div>
+
+                {/* 2. Monitored Volume */}
+                <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm text-right flex flex-col justify-center min-w-[120px]">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">{t.card_monitored_vol}</div>
                     <div className="text-xl font-black text-blue-600">$42.5M</div>
                 </div>
+
+                {/* [NEW] 3. Sanction Stats Mini-Box (Compact View) */}
+                <div className="bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm flex flex-col justify-center min-w-[160px]">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase mb-1 flex justify-between items-center">
+                        <span>TranSight Risk DB</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                        <div className="flex justify-between items-center text-[10px]">
+                            <span className="font-bold text-slate-500">OFAC</span>
+                            <span className="font-mono font-bold text-red-600 bg-red-50 px-1.5 rounded">{SANCTION_DATA.ofac.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px]">
+                            <span className="font-bold text-slate-500">KoFIU</span>
+                            <span className="font-mono font-bold text-orange-600 bg-orange-50 px-1.5 rounded">{SANCTION_DATA.kofiu.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px]">
+                            <span className="font-bold text-slate-500">Crime</span>
+                            <span className="font-mono font-bold text-slate-700 bg-slate-100 px-1.5 rounded">{SANCTION_DATA.crime.toLocaleString()}</span>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
 
-        {/* Charts & Asset/Wallet Columns (기존 코드 유지 - 생략 없이 포함됨) */}
+        {/* Row 2: Charts Area */}
         <div className="grid grid-cols-12 gap-6 mb-6">
-            {/* Sanction Stats (기존 유지) */}
-            <div className="col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 p-5">
-                <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><span>{t.sanc_title}</span></h3>
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center group cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
-                        <span className="text-sm font-bold text-slate-500 group-hover:text-red-600">{t.sanc_ofac}</span>
-                        <span className="text-lg font-black text-slate-800 font-mono">{SANCTION_DATA.ofac.toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2"><div className="w-[85%] h-full bg-red-500"></div></div>
-                    <div className="flex justify-between items-center group cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
-                        <span className="text-sm font-bold text-slate-500 group-hover:text-orange-600">{t.sanc_kofiu}</span>
-                        <span className="text-lg font-black text-slate-800 font-mono">{SANCTION_DATA.kofiu.toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mb-2"><div className="w-[45%] h-full bg-orange-500"></div></div>
-                    <div className="flex justify-between items-center group cursor-pointer hover:bg-slate-50 p-2 rounded transition-colors">
-                        <span className="text-sm font-bold text-slate-500 group-hover:text-slate-800">{t.sanc_crime}</span>
-                        <span className="text-lg font-black text-slate-800 font-mono">{SANCTION_DATA.crime.toLocaleString()}</span>
-                    </div>
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden"><div className="w-[60%] h-full bg-slate-600"></div></div>
-                </div>
-            </div>
-            {/* Risk Chart (기존 유지) */}
+            
+            {/* [Main] Historical Risk Exposure Bar Chart (8/12) */}
             <div className="col-span-8 bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col">
-                <h3 className="font-bold text-slate-700 mb-4">Risk Distribution (Weekly)</h3>
-                <div className="flex-1 flex items-end justify-between px-6 gap-4">
-                    {[35, 55, 40, 70, 45, 90, 60].map((h, i) => (
-                        <div key={i} className="w-full flex flex-col items-center gap-2 group">
-                            <div className="w-full bg-blue-50 rounded-t-md relative overflow-hidden h-40 transition-all group-hover:bg-blue-100">
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-600 to-indigo-500 rounded-t-md transition-all duration-500 group-hover:from-blue-500 group-hover:to-cyan-400" style={{ height: `${h}%` }}>
-                                    {h > 60 && <div className="absolute top-2 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-white/50 rounded-full animate-ping" />}
+                <div className="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                            <DashIcons.BarChart /> {t.aml_history || "Historical Risk Exposure"}
+                        </h3>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                            당사 운영지갑과 연관된 고위험 주소군과의 거래 빈도 및 규모 분석
+                        </p>
+                    </div>
+                    <div className="text-[10px] bg-slate-50 text-slate-500 px-2 py-1 rounded border border-slate-100 font-mono">
+                        Period: All Time
+                    </div>
+                </div>
+
+                {/* [Layout Change] Flex Column -> Grid 2 Cols to remove scroll */}
+                <div className="flex-1 grid grid-cols-2 gap-x-4 gap-y-2 overflow-hidden">
+                    {RISK_EXPOSURE_DATA.map(item => {
+                        const countWidth = Math.max((item.count / MAX_COUNT) * 100, 2);
+                        const volWidth = Math.max((item.volume / MAX_VOL) * 100, 2);
+                        
+                        return (
+                        <div key={item.id} className="group bg-white rounded border border-slate-100 p-2 hover:border-blue-200 hover:shadow-sm transition-all">
+                            {/* Title Row */}
+                            <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-2">
+                                <span className={`flex items-center gap-1 truncate ${item.risk === 'severe' ? 'text-red-600' : 'text-slate-700'}`} title={item.label}>
+                                    {/* 번호와 텍스트가 너무 길면 잘리므로 truncate 적용 */}
+                                    <span className="truncate">{item.label}</span>
+                                    {item.risk === 'severe' && <span className="flex-shrink-0 w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>}
+                                </span>
+                            </div>
+                            
+                            {/* Dual Bar Layout (Compact) */}
+                            <div className="grid grid-cols-2 gap-3 items-center">
+                                {/* Left: Count Bar */}
+                                <div className="flex flex-col justify-center border-r border-slate-100 pr-3">
+                                    <div className="flex justify-between items-end text-[9px] text-slate-500 mb-1">
+                                        <span>건수</span>
+                                        <span className="font-bold text-blue-600">{item.count.toLocaleString()}</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                        <div 
+                                            className="h-full bg-blue-500 rounded-full transition-all duration-1000" 
+                                            style={{ width: `${countWidth}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+
+                                {/* Right: Volume Bar */}
+                                <div className="flex flex-col justify-center">
+                                    <div className="flex justify-between items-end text-[9px] text-slate-500 mb-1">
+                                        <span>금액</span>
+                                        <span className="font-bold text-slate-700 tracking-tight">
+                                            {/* 공간 절약을 위해 억 단위 등으로 줄이거나, 그냥 숫자로 표현 */}
+                                            {item.volume > 100000000 
+                                                ? `₩ ${(item.volume/100000000).toFixed(1)}억` 
+                                                : `₩ ${(item.volume/10000).toFixed(0)}만`}
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                        <div 
+                                            className={`h-full rounded-full transition-all duration-1000 ${item.risk === 'severe' ? 'bg-red-500' : 'bg-slate-500'}`} 
+                                            style={{ width: `${volWidth}%` }}
+                                        ></div>
+                                    </div>
                                 </div>
                             </div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i]}</span>
                         </div>
-                    ))}
+                    )})}
+                </div>
+            </div>
+
+            {/* [Side] Risk Proportion Pie Chart (4/12) */}
+            <div className="col-span-4 bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col relative overflow-hidden">
+                <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2 z-10">
+                    <span>◓ {t.sanc_title || "Risk Composition"}</span>
+                </h3>
+                
+                {/* Donut Chart Implementation */}
+                <div className="flex-1 flex flex-col items-center justify-center relative z-10">
+                    <div className="w-40 h-40 relative">
+                        <svg viewBox="0 0 32 32" className="w-full h-full transform -rotate-90">
+                            {RISK_EXPOSURE_DATA.reduce((acc, item, idx) => {
+                                const percentage = (item.count / TOTAL_RISK_COUNT) * 100;
+                                const dashArray = `${percentage} ${100 - percentage}`;
+                                const dashOffset = 100 - acc.currentOffset + 25; // start from top
+                                
+                                // SVG Circle Logic
+                                // Circumference of r=16 is ~100. We map % directly.
+                                // We use stroke-dasharray to draw segments.
+                                const segment = (
+                                    <circle 
+                                        key={item.id}
+                                        cx="16" cy="16" r="8" // r=8 means circumference ~50? No, let's use r=15.915 for circumference=100
+                                        // Standard normalized SVG circle trick: r=15.91549430918954 -> C=100
+                                        fill="transparent" 
+                                        stroke={item.color} 
+                                        strokeWidth="8"
+                                        strokeDasharray={`${percentage} 100`}
+                                        strokeDashoffset={-acc.currentOffset}
+                                    />
+                                );
+                                acc.elements.push(segment);
+                                acc.currentOffset += percentage;
+                                return acc;
+                            }, { elements: [] as JSX.Element[], currentOffset: 0 }).elements}
+                            
+                            {/* Inner Circle for Donut Effect */}
+                            <circle cx="16" cy="16" r="10" fill="white" />
+                        </svg>
+                        
+                        {/* Center Text */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase">Total Cases</span>
+                            <span className="text-xl font-black text-slate-800">{TOTAL_RISK_COUNT}</span>
+                        </div>
+                    </div>
+
+                    {/* Legend */}
+                    <div className="w-full mt-6 grid grid-cols-2 gap-x-2 gap-y-1.5 px-2">
+                        {RISK_EXPOSURE_DATA.map(item => (
+                            <div key={item.id} className="flex items-center gap-1.5 text-[10px] text-slate-600 truncate">
+                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: item.color }}></span>
+                                <span className="truncate" title={item.label}>{item.label.split('(')[0]}</span>
+                                <span className="text-slate-400 font-mono ml-auto">{Math.round((item.count/TOTAL_RISK_COUNT)*100)}%</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
 
+        {/* Row 3: Asset & Monitor (기존 유지 - 생략 없이 포함) */}
         <div className="grid grid-cols-12 gap-6 h-[600px]">
-            {/* Left Column (Asset & Wallet List) */}
+            {/* Left Column: Asset & Ops List */}
             <div className="col-span-4 flex flex-col gap-6 h-full">
+                {/* Asset Portfolio Card */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col">
                     <div className="flex justify-between items-start mb-4">
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2"><DashIcons.PieChart /> Asset Portfolio</h3>
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2"><DashIcons.PieChart /> {t.asset_portfolio || "Asset Portfolio Status"}</h3>
                         <div className="text-[9px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-100">10m Update</div>
                     </div>
                     <div className="mb-6">
@@ -451,6 +485,8 @@ const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' 
                         </div>
                     </div>
                 </div>
+                
+                {/* Ops Wallets List */}
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden flex-1">
                     <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-slate-700 flex items-center gap-2"><DashIcons.Wallet /> {t.ops_title}</h3>
@@ -476,35 +512,24 @@ const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' 
                 </div>
             </div>
 
-            {/* Right Column: Real-time Monitor */}
+            {/* Right Column: Real-time Monitor (기존 유지) */}
             <div className="col-span-8 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden relative">
-                
-                {/* Global Loading (Standard) */}
-                {loading && monitorMode === 'standard' && (
-                    <div className="absolute top-0 left-0 w-full h-1 bg-blue-100 z-20"><div className="h-full bg-blue-500 animate-loading-bar"></div></div>
-                )}
+                {loading && monitorMode === 'standard' && <div className="absolute top-0 left-0 w-full h-1 bg-blue-100 z-20"><div className="h-full bg-blue-500 animate-loading-bar"></div></div>}
                 <style>{`@keyframes loading-bar { 0% { width: 0%; margin-left: 0; } 50% { width: 50%; margin-left: 25%; } 100% { width: 0%; margin-left: 100%; } } .animate-loading-bar { animation: loading-bar 1.5s infinite linear; }`}</style>
 
-                {/* Monitor Header */}
                 <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                     <div className="flex items-center gap-3">
-                        <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-                            Real-time Inflow/Outflow Monitor
-                        </h3>
+                        <h3 className="font-bold text-slate-700 flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> {t.realtime_data_table || "Real-time Inflow/Outflow Monitor"}</h3>
                         <div className="flex bg-slate-200 rounded p-0.5 ml-2">
                             <button onClick={() => setMonitorMode('standard')} className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all ${monitorMode === 'standard' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Standard</button>
-                            <button onClick={() => setMonitorMode('extended')} className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all flex items-center gap-1 ${monitorMode === 'extended' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}><DashIcons.Expanded /> Extended</button>
+                            <button onClick={() => setMonitorMode('extended')} className={`text-[10px] font-bold px-2 py-0.5 rounded transition-all flex items-center gap-1 ${monitorMode === 'extended' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}><DashIcons.Expanded /> Extended (5-Hop)</button>
                         </div>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono">
-                        <DashIcons.Refresh /> Updated: {dashboardLastUpdated ? dashboardLastUpdated.toLocaleTimeString() : 'Syncing...'}
-                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-mono"><DashIcons.Refresh /> Updated: {dashboardLastUpdated ? dashboardLastUpdated.toLocaleTimeString() : 'Syncing...'}</div>
                 </div>
                 
                 <div className="flex-1 overflow-hidden relative bg-white">
-                    
-                    {/* === STANDARD MODE === */}
+                    {/* STANDARD TABLE */}
                     {monitorMode === 'standard' && (
                         <div className="h-full overflow-y-auto custom-scrollbar">
                         <table className="w-full text-left border-collapse">
@@ -513,7 +538,6 @@ const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' 
                                     <th className="p-3 border-b border-slate-100">Time</th>
                                     <th className="p-3 border-b border-slate-100">Type</th>
                                     <th className="p-3 border-b border-slate-100">Ops Wallet (Me)</th>
-                                    {/* [Fix] 가운데 정렬 적용 */}
                                     <th className="p-3 border-b border-slate-100 text-center">Counterparty</th>
                                     <th className="p-3 border-b border-slate-100 text-right">Amount</th>
                                     <th className="p-3 border-b border-slate-100 text-center">Risk</th>
@@ -524,31 +548,19 @@ const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' 
                                     const labelInfo = labelMap[tx.counterparty];
                                     return (
                                     <tr key={tx.txID + idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
-                                        <td className="p-3 font-mono text-slate-500 w-24">
-                                            {new Date(tx.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
-                                        </td>
-                                        <td className="p-3 w-20">
-                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${tx.isCustomer ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>{tx.isCustomer ? 'INFLOW' : 'OUTFLOW'}</span>
-                                        </td>
-                                        <td className="p-3 w-32">
-                                            <div className="font-mono text-slate-500 truncate w-28 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded" title={tx.ownerWallet}>{tx.ownerWallet.slice(0,4)}...{tx.ownerWallet.slice(-4)}</div>
-                                        </td>
-                                        <td className="p-3 relative">
-                                            {/* Standard Mode는 Customer면 customer 타입, 아니면 normal */}
-                                            {renderHopCell(tx.counterparty, tx.isCustomer ? 'customer' : 'normal', tx)}
-                                        </td>
+                                        <td className="p-3 font-mono text-slate-500 w-24">{new Date(tx.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}</td>
+                                        <td className="p-3 w-20"><span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${tx.isCustomer ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>{tx.isCustomer ? 'INFLOW' : 'OUTFLOW'}</span></td>
+                                        <td className="p-3 w-32"><div className="font-mono text-slate-500 truncate w-28 text-[10px] bg-slate-100 px-1.5 py-0.5 rounded" title={tx.ownerWallet}>{tx.ownerWallet.slice(0,4)}...{tx.ownerWallet.slice(-4)}</div></td>
+                                        <td className="p-3 relative">{renderHopCell(tx.counterparty, tx.isCustomer ? 'customer' : 'normal', tx)}</td>
                                         <td className="p-3 text-right font-bold font-mono w-28">{tx.amount.toLocaleString()} <span className="text-[9px] text-slate-400 font-sans font-normal">{tx.token}</span></td>
-                                        <td className="p-3 text-center w-16">
-                                            {labelInfo ? <div className={`w-3 h-3 rounded-full inline-block ${getRiskColorClass(labelInfo.riskLevel)} ring-2 ring-white`} title={`Risk: ${labelInfo.riskLevel}`}></div> : <span className="w-2 h-2 rounded-full inline-block bg-slate-200"></span>}
-                                        </td>
+                                        <td className="p-3 text-center w-16">{labelInfo ? <div className={`w-3 h-3 rounded-full inline-block ${getRiskColorClass(labelInfo.riskLevel)} ring-2 ring-white`} title={`Risk: ${labelInfo.riskLevel}`}></div> : <span className="w-2 h-2 rounded-full inline-block bg-slate-200"></span>}</td>
                                     </tr>
                                 )})}
                             </tbody>
                         </table>
                         </div>
                     )}
-
-                    {/* === EXTENDED MODE === */}
+                    {/* EXTENDED TABLE */}
                     {monitorMode === 'extended' && (
                         <div className="h-full overflow-y-auto custom-scrollbar bg-slate-50/50">
                              <table className="w-full text-left border-collapse table-fixed">
@@ -565,60 +577,27 @@ const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' 
                                 </thead>
                                 <tbody className="text-xs font-mono">
                                     {extendedTxs.map((row) => {
-                                        const risks = [row.hopMinus2, row.hopMinus1, row.hopPlus1, row.hopPlus2]
-                                            .map(addr => addr ? labelMap[addr]?.riskLevel : null)
-                                            .filter(Boolean);
+                                        const risks = [row.hopMinus2, row.hopMinus1, row.hopPlus1, row.hopPlus2].map(addr => addr ? labelMap[addr]?.riskLevel : null).filter(Boolean);
                                         const hasSevere = risks.some(r => ['SEVERE','HIGH'].includes(r || ''));
                                         const hasLow = risks.includes('LOW');
                                         const rowRiskColor = hasSevere ? 'bg-red-500' : (hasLow ? 'bg-green-500' : 'bg-slate-200');
-
                                         return (
                                         <tr key={row.id} className="border-b border-slate-200 bg-white hover:bg-blue-50/20 transition-colors h-14 relative group/row">
-                                            {row.isLoadingExtended && (
-                                                <td colSpan={7} className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
-                                                    <div className="h-0.5 w-20 bg-blue-100 overflow-hidden rounded-full"><div className="h-full bg-blue-500 animate-loading-bar"></div></div>
-                                                </td>
-                                            )}
-
-                                            <td className="p-2 text-center text-slate-400 border-r border-slate-100">
-                                                {new Date(row.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit' })}
-                                            </td>
-                                            
-                                            <td className="p-2 border-r border-slate-100 text-center relative">
-                                                {renderHopCell(row.hopMinus2, 'source', row)}
-                                                {row.hopMinus2 && <div className="absolute top-1/2 -right-2 w-4 h-[1px] bg-slate-300"></div>}
-                                            </td>
-
-                                            <td className="p-2 border-r border-slate-100 text-center relative">
-                                                {renderHopCell(row.hopMinus1, row.type === 'INFLOW' ? 'customer' : 'normal', row)}
-                                            </td>
-
+                                            {row.isLoadingExtended && <td colSpan={7} className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center"><div className="h-0.5 w-20 bg-blue-100 overflow-hidden rounded-full"><div className="h-full bg-blue-500 animate-loading-bar"></div></div></td>}
+                                            <td className="p-2 text-center text-slate-400 border-r border-slate-100">{new Date(row.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit' })}</td>
+                                            <td className="p-2 border-r border-slate-100 text-center relative">{renderHopCell(row.hopMinus2, 'source', row)}{row.hopMinus2 && <div className="absolute top-1/2 -right-2 w-4 h-[1px] bg-slate-300"></div>}</td>
+                                            <td className="p-2 border-r border-slate-100 text-center relative">{renderHopCell(row.hopMinus1, row.type === 'INFLOW' ? 'customer' : 'normal', row)}</td>
                                             <td className="p-2 border-r border-slate-100 text-center bg-blue-50/10 relative">
                                                 <div className="font-bold text-blue-700 text-[10px] mb-1">{row.type}</div>
-                                                <div className="bg-white border border-blue-200 text-blue-800 px-2 py-1 rounded truncate text-[10px] shadow-sm cursor-pointer" onClick={() => handleCopyAddr(row.hopMe)} title={row.hopMe}>
-                                                    {row.hopMe.slice(0,4)}...{row.hopMe.slice(-4)}
-                                                </div>
+                                                <div className="bg-white border border-blue-200 text-blue-800 px-2 py-1 rounded truncate text-[10px] shadow-sm cursor-pointer" onClick={() => handleCopyAddr(row.hopMe)} title={row.hopMe}>{row.hopMe.slice(0,4)}...{row.hopMe.slice(-4)}</div>
                                                 <div className="text-[10px] font-bold mt-1 text-slate-600">{row.amount.toLocaleString()} {row.token}</div>
                                             </td>
-
-                                            <td className="p-2 border-r border-slate-100 text-center relative">
-                                                {/* [Fix] Outflow일 때 Hop+1은 External(normal)로 처리하여 Customer 라벨 제거 */}
-                                                {renderHopCell(row.hopPlus1, 'normal', row)}
-                                            </td>
-
-                                            <td className="p-2 border-r border-slate-100 text-center relative">
-                                                {row.hopPlus2 && <div className="absolute top-1/2 -left-2 w-4 h-[1px] bg-slate-300"></div>}
-                                                {renderHopCell(row.hopPlus2, 'dest', row)}
-                                            </td>
-
-                                            <td className="p-2 text-center">
-                                                <div className={`w-3 h-3 rounded-full inline-block ${rowRiskColor} ring-2 ring-white`} title={`Risk Detected`}></div>
-                                            </td>
+                                            <td className="p-2 border-r border-slate-100 text-center relative">{renderHopCell(row.hopPlus1, 'normal', row)}</td>
+                                            <td className="p-2 border-r border-slate-100 text-center relative">{row.hopPlus2 && <div className="absolute top-1/2 -left-2 w-4 h-[1px] bg-slate-300"></div>}{renderHopCell(row.hopPlus2, 'dest', row)}</td>
+                                            <td className="p-2 text-center"><div className={`w-3 h-3 rounded-full inline-block ${rowRiskColor} ring-2 ring-white`}></div></td>
                                         </tr>
                                     )})}
-                                    {extendedTxs.length === 0 && (
-                                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">Waiting for next cycle...</td></tr>
-                                    )}
+                                    {extendedTxs.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">Waiting for next cycle...</td></tr>}
                                 </tbody>
                              </table>
                         </div>
