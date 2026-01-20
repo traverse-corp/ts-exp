@@ -1,14 +1,18 @@
-import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom'; // [핵심] Portal 가져오기 (드롭다운 탈출용)
-import { useNavigate } from 'react-router-dom'; // [NEW] 라우터 이동용
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useGlobalStore } from '../../stores/useGlobalStore';
-import { useCanvasStore } from '../../stores/useCanvasStore'; // [NEW] 캔버스 스토어
+import { useCanvasStore } from '../../stores/useCanvasStore';
 import { supabase } from '../../lib/supabaseClient';
 
-export const SessionManager = ({ currentMode }: { currentMode: string }) => {
-  const { saveSession, loadSession, session, language } = useGlobalStore();
-  const { importSession } = useCanvasStore(); // [NEW] 캔버스 임포트 함수
-  const navigate = useNavigate(); // [NEW] 페이지 이동
+// [NEW] 어디서든 다른 버튼 모양으로 호출할 수 있게 trigger prop 추가
+interface SessionManagerProps {
+  currentMode: string;
+  trigger?: React.ReactNode; 
+}
+
+export const SessionManager = ({ currentMode, trigger }: SessionManagerProps) => {
+  const { saveSession, loadSession, session, language, setMode } = useGlobalStore();
+  const { importSession } = useCanvasStore(); // Canvas 불러오기 함수
 
   const [isOpen, setIsOpen] = useState(false);
   const [sessionList, setSessionList] = useState<any[]>([]);
@@ -21,7 +25,7 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
     setIsLoading(true);
     const { data, error } = await supabase
       .from('saved_sessions')
-      .select('id, title, created_at, mode, nodes, links, notes') // nodes, links 등 필요한 데이터 select
+      .select('id, title, created_at, mode, nodes, links, groups, notes') 
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
     
@@ -33,47 +37,67 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
     if (isOpen) fetchSessions();
   }, [isOpen]);
 
+  // 저장 핸들러
   const handleSave = async () => {
     if (!titleInput.trim()) return;
+    
+    // [Canvas 모드일 때 저장 처리]
+    // 원래는 여기서 CanvasStore 데이터를 가져와 저장해야 하지만, 
+    // 현재 CanvasPanel 내부에서 별도 저장 로직을 쓰고 있으므로, 
+    // 이 통합 매니저에서의 저장은 GlobalStore 기준(AutoTrace/Dashboard)으로 동작하게 둡니다.
+    // (Canvas에서는 사이드바의 'Save' 버튼을 주력으로 사용)
     const success = await saveSession(titleInput, currentMode);
+
     if (success) {
       setTitleInput('');
-      fetchSessions(); // 목록 갱신
+      fetchSessions();
       alert(language === 'ko' ? "저장되었습니다." : "Session Saved.");
     }
   };
 
-  // 기존 대시보드 로드 (덮어쓰기)
-  const handleLoad = async (id: string) => {
-    if (confirm(language === 'ko' ? "현재 작업을 덮어쓰고 불러오시겠습니까?" : "Overwrite current workspace?")) {
-        await loadSession(id);
+  // 리스트 아이템 클릭 핸들러 (통합 로드)
+  const handleLoadAction = async (sessionData: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+
+    // 1. [Canvas 모드] -> 병합/새탭 선택 (기존 경고창 대신 바로 기능 실행)
+    if (currentMode === 'canvas') {
+        const msg = language === 'ko' 
+            ? `"${sessionData.title}" 불러오기\n\n[확인] = 현재 탭에 병합 (Merge)\n[취소] = 새 탭으로 열기 (New Tab)`
+            : `Load "${sessionData.title}"\n\n[OK] = Merge to current\n[Cancel] = Open in new tab`;
+        
+        if (window.confirm(msg)) {
+            importSession(sessionData, 'merge');
+        } else {
+            importSession(sessionData, 'new_tab');
+        }
         setIsOpen(false);
+    } 
+    // 2. [다른 모드] -> 덮어쓰기 로드
+    else {
+        const msg = language === 'ko' ? "현재 작업을 덮어쓰고 불러오시겠습니까?" : "Overwrite current workspace?";
+        if (confirm(msg)) {
+            await loadSession(sessionData.id);
+            setIsOpen(false);
+        }
     }
   };
 
-  // [NEW] 캔버스로 불러오기
-  const handleLoadToCanvas = async (sessionData: any, e: React.MouseEvent) => {
-    e.stopPropagation(); // 부모 클릭 방지
-
-    // 사용자에게 열기 방식 물어보기
-    const isKorean = language === 'ko';
-    const msg = isKorean 
-        ? `"${sessionData.title}" 맵을 캔버스로 불러옵니다.\n\n[확인] = 현재 캔버스에 병합 (Merge)\n[취소] = 새 탭으로 열기 (New Tab)`
-        : `Load "${sessionData.title}" into Canvas.\n\n[OK] = Merge into current canvas\n[Cancel] = Open in new tab`;
-
-    if (window.confirm(msg)) {
-        importSession(sessionData, 'merge');
-    } else {
-        importSession(sessionData, 'new_tab');
-    }
-
-    setIsOpen(false); // 모달 닫기
-    navigate('/canvas'); // 캔버스 페이지로 이동
+  // [To Canvas] 버튼 핸들러
+  const handleToCanvas = (sessionData: any, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const msg = language === 'ko' ? "이 세션을 캔버스로 보내시겠습니까?" : "Send this session to Canvas?";
+      
+      if (confirm(msg)) {
+          importSession(sessionData, 'new_tab'); // 새 탭으로 열기
+          setMode('canvas'); // 화면 전환
+          setIsOpen(false);
+      }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      if(confirm(language === 'ko' ? "삭제하시겠습니까?" : "Delete this session?")) {
+      const msg = language === 'ko' ? "삭제하시겠습니까?" : "Delete this session?";
+      if(confirm(msg)) {
           await supabase.from('saved_sessions').delete().eq('id', id);
           fetchSessions();
       }
@@ -81,18 +105,22 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
 
   return (
     <>
-      {/* 1. 드롭다운 트리거 버튼 */}
-      <button 
-        onClick={() => setIsOpen(true)}
-        className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center justify-between group"
-      >
-        <span className="flex items-center gap-2">💾 {language === 'ko' ? '저장된 세션' : 'Saved Sessions'}</span>
-        <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded group-hover:bg-blue-100 group-hover:text-blue-600">Manage</span>
-      </button>
+      {/* 1. 트리거 (커스텀 버튼 or 기본 메뉴 버튼) */}
+      {trigger ? (
+          <div onClick={() => setIsOpen(true)}>{trigger}</div>
+      ) : (
+          <button 
+            onClick={() => setIsOpen(true)}
+            className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center justify-between group"
+          >
+            <span className="flex items-center gap-2">💾 {language === 'ko' ? '저장된 세션' : 'Saved Sessions'}</span>
+            <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded group-hover:bg-blue-100 group-hover:text-blue-600">Manage</span>
+          </button>
+      )}
 
-      {/* 2. 모달 (Portal 사용) */}
+      {/* 2. 모달 (Portal) */}
       {isOpen && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-[450px] rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh]">
             
             {/* Header */}
@@ -106,24 +134,25 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
             {/* Content */}
             <div className="p-5 overflow-y-auto custom-scrollbar flex-1 bg-white">
                
-               {/* Save New Session */}
+               {/* Save Area (Canvas 모드가 아닐 때만 노출하거나, 필요 시 활성화) */}
+               {/* Canvas 모드에서는 사이드바 저장이 메인이므로 여기선 숨길 수도 있지만, 일단 유지 */}
                <div className="mb-8">
                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2 tracking-wider">
-                       {language === 'ko' ? '현재 작업 저장' : 'Save Workspace'}
+                       {language === 'ko' ? '현재 작업 저장' : 'Save Current Workspace'}
                    </label>
                    <div className="flex gap-2">
                        <input 
                          type="text" 
                          value={titleInput}
                          onChange={(e) => setTitleInput(e.target.value)}
-                         placeholder={language === 'ko' ? "세션 이름 (예: OO사건 분석)" : "Session Name..."}
-                         className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                         placeholder={language === 'ko' ? "프로젝트 이름..." : "Enter project name..."}
+                         className="flex-1 border border-slate-300 rounded px-3 py-2 text-sm focus:outline-blue-500 transition-all"
                          onKeyDown={(e) => e.key === 'Enter' && handleSave()}
                        />
                        <button 
                          onClick={handleSave}
                          disabled={!titleInput.trim()}
-                         className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 py-2 rounded text-xs font-bold transition-all shadow-sm active:scale-95"
+                         className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-200 disabled:text-slate-400 text-white px-4 py-2 rounded text-xs font-bold shadow-sm active:scale-95 transition-all"
                        >
                          {language === 'ko' ? '저장' : 'Save'}
                        </button>
@@ -142,10 +171,7 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
                    </div>
 
                    {isLoading ? (
-                       <div className="flex flex-col items-center justify-center py-8 text-slate-300 gap-2">
-                           <div className="w-5 h-5 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin"></div>
-                           <span className="text-xs">Syncing...</span>
-                       </div>
+                       <div className="text-center py-8 text-xs text-slate-400">Syncing...</div>
                    ) : sessionList.length === 0 ? (
                        <div className="text-center py-8 text-xs text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                            {language === 'ko' ? '저장된 세션이 없습니다.' : 'No saved sessions found.'}
@@ -155,8 +181,7 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
                            {sessionList.map(s => (
                                <div 
                                  key={s.id}
-                                 // 기본 클릭: 현재 대시보드에 로드 (기존 기능)
-                                 onClick={() => handleLoad(s.id)}
+                                 onClick={() => handleLoadAction(s)}
                                  className="relative flex flex-col p-3 rounded-lg border border-slate-200 hover:border-blue-400 hover:shadow-md cursor-pointer transition-all group bg-white"
                                >
                                    <div className="flex justify-between items-start mb-2">
@@ -168,7 +193,7 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
                                          className="absolute top-2 right-2 text-slate-300 hover:text-red-500 p-1.5 rounded hover:bg-red-50 transition-colors"
                                          title="Delete"
                                        >
-                                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                         🗑️
                                        </button>
                                    </div>
                                    
@@ -180,14 +205,15 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
                                            </span>
                                        </div>
 
-                                       {/* [NEW] Canvas Button */}
-                                       <button 
-                                           onClick={(e) => handleLoadToCanvas(s, e)}
-                                           className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2.5 py-1.5 rounded hover:bg-indigo-100 border border-indigo-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95"
-                                       >
-                                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                           To Canvas
-                                       </button>
+                                       {/* 캔버스 모드가 아닐 때만 'To Canvas' 버튼 표시 (캔버스에선 리스트 클릭이 곧 로드임) */}
+                                       {currentMode !== 'canvas' && (
+                                           <button 
+                                               onClick={(e) => handleToCanvas(s, e)}
+                                               className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2.5 py-1.5 rounded hover:bg-indigo-100 border border-indigo-100 transition-colors flex items-center gap-1 shadow-sm active:scale-95"
+                                           >
+                                               To Canvas ↗
+                                           </button>
+                                       )}
                                    </div>
                                </div>
                            ))}
@@ -197,7 +223,7 @@ export const SessionManager = ({ currentMode }: { currentMode: string }) => {
             </div>
           </div>
         </div>,
-        document.body // Portal Target
+        document.body
       )}
     </>
   );

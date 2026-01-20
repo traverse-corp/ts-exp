@@ -1,33 +1,34 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-// 탭 하나(워크스페이스)의 데이터 구조
+// [NEW] 병합 기록을 위한 인터페이스
+export interface ImportRecord {
+    id: string;
+    title: string;
+    nodeCount: number;
+    timestamp: number;
+}
+
 export interface CanvasTab {
     id: string;
     title: string;
     nodes: any[];
     links: any[];
-    // 병합된 맵들을 구분하기 위한 그룹 정보 (테두리/색상용)
-    groups: { id: string; name: string; color: string }[];
-    notes: string;      // 탭별 메모장
-    clipboard: string[]; // 탭별 클립보드 (주소 등)
+    groups: any[];
+    notes: string;
+    clipboard: string[];
+    importHistory: ImportRecord[]; // [NEW] 병합 이력 배열 추가
     createdAt: number;
 }
 
 interface CanvasState {
     tabs: CanvasTab[];
     activeTabId: string | null;
-
-    // Actions
     addTab: (title?: string) => void;
     removeTab: (id: string) => void;
     setActiveTab: (id: string) => void;
-
-    // 데이터 조작
     updateActiveTabData: (data: Partial<CanvasTab>) => void;
-    addNodesToActiveTab: (newNodes: any[], newLinks: any[]) => void;
-
-    // [핵심] 세션 불러오기 (새 탭 vs 병합)
+    addNodesToActiveTab: (nodes: any[], links: any[]) => void;
     importSession: (sessionData: any, mode: 'new_tab' | 'merge') => void;
 }
 
@@ -37,16 +38,16 @@ export const useCanvasStore = create<CanvasState>()(
             tabs: [],
             activeTabId: null,
 
-            // 1. 탭 추가
-            addTab: (title = 'New Investigation') => {
+            addTab: (title = 'Untitled Project') => {
                 const newTab: CanvasTab = {
                     id: crypto.randomUUID(),
                     title,
                     nodes: [],
                     links: [],
-                    groups: [{ id: 'default', name: 'Base Layer', color: '#94a3b8' }],
+                    groups: [],
                     notes: '',
                     clipboard: [],
+                    importHistory: [], // 초기화
                     createdAt: Date.now(),
                 };
                 set((state) => ({
@@ -55,99 +56,110 @@ export const useCanvasStore = create<CanvasState>()(
                 }));
             },
 
-            // 2. 탭 닫기
-            removeTab: (id) => set((state) => {
-                const newTabs = state.tabs.filter((t) => t.id !== id);
-                // 닫은 탭이 활성 탭이었다면, 마지막 탭을 활성화
-                const newActiveId = id === state.activeTabId
-                    ? (newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null)
-                    : state.activeTabId;
-                return { tabs: newTabs, activeTabId: newActiveId };
-            }),
+            removeTab: (id) => {
+                set((state) => {
+                    const newTabs = state.tabs.filter(t => t.id !== id);
+                    let newActiveId = state.activeTabId;
+                    if (id === state.activeTabId) {
+                        newActiveId = newTabs.length > 0 ? newTabs[0].id : null;
+                    }
+                    return { tabs: newTabs, activeTabId: newActiveId };
+                });
+            },
 
-            // 3. 탭 전환
             setActiveTab: (id) => set({ activeTabId: id }),
 
-            // 4. 현재 탭 데이터 업데이트 (메모, 제목 등)
-            updateActiveTabData: (data) => set((state) => ({
-                tabs: state.tabs.map((tab) =>
-                    tab.id === state.activeTabId ? { ...tab, ...data } : tab
-                )
-            })),
+            updateActiveTabData: (data) => {
+                set((state) => ({
+                    tabs: state.tabs.map(t => t.id === state.activeTabId ? { ...t, ...data } : t)
+                }));
+            },
 
-            // 5. 노드/링크 추가 (검색이나 확장을 통해)
-            addNodesToActiveTab: (newNodes, newLinks) => set((state) => {
+            addNodesToActiveTab: (newNodes, newLinks) => {
+                const state = get();
                 const activeTab = state.tabs.find(t => t.id === state.activeTabId);
-                if (!activeTab) return state;
+                if (!activeTab) return;
 
-                // 중복 방지 (기존에 없는 노드만 추가)
-                const existingIds = new Set(activeTab.nodes.map(n => n.id));
-                const filteredNodes = newNodes.filter(n => !existingIds.has(n.id));
+                const existingNodeIds = new Set(activeTab.nodes.map(n => n.id));
+                const uniqueNodes = newNodes.filter(n => !existingNodeIds.has(n.id));
 
-                // 링크 중복 방지 로직 (간소화)
-                const combinedLinks = [...activeTab.links, ...newLinks];
+                // 링크 중복 제거 (간단 버전)
+                const existingLinkKeys = new Set(activeTab.links.map(l => `${l.source}-${l.target}`));
+                const uniqueLinks = newLinks.filter(l => !existingLinkKeys.has(`${l.source}-${l.target}`));
 
-                return {
-                    tabs: state.tabs.map(t => t.id === state.activeTabId ? {
+                set((s) => ({
+                    tabs: s.tabs.map(t => t.id === s.activeTabId ? {
                         ...t,
-                        nodes: [...t.nodes, ...filteredNodes],
-                        links: combinedLinks
+                        nodes: [...t.nodes, ...uniqueNodes],
+                        links: [...t.links, ...uniqueLinks]
                     } : t)
-                };
-            }),
+                }));
+            },
 
-            // 6. [핵심] 세션 불러오기 & 병합 로직
             importSession: (sessionData, mode) => {
                 const state = get();
+                const importGroupId = sessionData.id || crypto.randomUUID();
+                const importGroupName = sessionData.title || 'Imported Map';
+                const importGroupColor = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
 
-                // (A) 새 탭으로 열기
+                const processedNodes = (sessionData.nodes || []).map((node: any) => ({
+                    ...node,
+                    groupId: node.groupId || importGroupId
+                }));
+
+                const processedLinks = (sessionData.links || []).map((link: any) => ({
+                    ...link,
+                    source: typeof link.source === 'object' ? link.source.id : link.source,
+                    target: typeof link.target === 'object' ? link.target.id : link.target
+                }));
+
+                // [NEW] 병합 기록 생성
+                const importRecord: ImportRecord = {
+                    id: sessionData.id || crypto.randomUUID(),
+                    title: sessionData.title || 'Unknown Source',
+                    nodeCount: processedNodes.length,
+                    timestamp: Date.now()
+                };
+
                 if (mode === 'new_tab' || state.tabs.length === 0) {
                     const newTab: CanvasTab = {
                         id: crypto.randomUUID(),
-                        title: sessionData.title || `Imported: ${new Date().toLocaleTimeString()}`,
-                        nodes: sessionData.nodes,
-                        links: sessionData.links,
-                        // 그룹 ID 부여 (시각적 구분용)
-                        groups: [{
-                            id: sessionData.id || 'imported_1',
-                            name: sessionData.title || 'Imported Map',
-                            color: '#3b82f6' // Blue
-                        }],
+                        title: sessionData.title || `Project ${new Date().toLocaleTimeString()}`,
+                        nodes: processedNodes,
+                        links: processedLinks,
+                        groups: [{ id: importGroupId, name: importGroupName, color: '#3b82f6' }],
                         notes: sessionData.notes || '',
                         clipboard: [],
+                        importHistory: [importRecord], // 최초 기록
                         createdAt: Date.now(),
                     };
                     set((s) => ({ tabs: [...s.tabs, newTab], activeTabId: newTab.id }));
                 }
-                // (B) 현재 탭에 병합 (Merge)
                 else {
                     const activeTab = state.tabs.find(t => t.id === state.activeTabId);
                     if (!activeTab) return;
 
-                    // 1. 노드 병합 (ID가 같으면 하나로 합쳐짐 = 자연스러운 연결)
                     const existingNodeIds = new Set(activeTab.nodes.map(n => n.id));
+                    const newUniqueNodes = processedNodes.filter((n: any) => !existingNodeIds.has(n.id));
+                    const newLinks = [...activeTab.links, ...processedLinks];
 
-                    // 새 그룹 정보 생성 (랜덤 컬러)
-                    const newGroupId = sessionData.id || crypto.randomUUID();
-                    const newGroupColor = `#${Math.floor(Math.random() * 16777215).toString(16)}`;
-
-                    const newNodes = sessionData.nodes.filter((n: any) => !existingNodeIds.has(n.id))
-                        .map((n: any) => ({ ...n, groupId: newGroupId })); // 그룹 태깅
-
-                    // 2. 링크 병합
-                    const newLinks = [...activeTab.links, ...sessionData.links];
+                    // 실제 추가된 노드 수로 기록 업데이트
+                    importRecord.nodeCount = newUniqueNodes.length;
 
                     set((s) => ({
                         tabs: s.tabs.map(t => t.id === s.activeTabId ? {
                             ...t,
-                            nodes: [...t.nodes, ...newNodes],
+                            nodes: [...t.nodes, ...newUniqueNodes],
                             links: newLinks,
-                            // 그룹 리스트에 추가 (범례 표시용)
-                            groups: [...t.groups, {
-                                id: newGroupId,
-                                name: sessionData.title || 'Merged Map',
-                                color: newGroupColor
-                            }]
+                            groups: t.groups.some(g => g.id === importGroupId)
+                                ? t.groups
+                                : [...t.groups, { id: importGroupId, name: importGroupName, color: importGroupColor }],
+                            // [NEW] 기존 히스토리에 추가
+                            importHistory: [...(t.importHistory || []), importRecord],
+                            // [Fix] 제목이 기본값(Untitled Project)이거나 비어있으면 불러온 파일명으로 변경
+                            title: (t.title === 'Untitled Project' || t.title === 'New Investigation' || t.nodes.length === 0)
+                                ? (sessionData.title || t.title)
+                                : t.title
                         } : t)
                     }));
                 }

@@ -523,18 +523,25 @@ const NetworkGraph = ({ nodes: propNodes, links: propLinks, groups: propGroups, 
           });
         }}
 
+// [수정된 부분] onNodeClick 핸들러 로직 병합
         onNodeClick={(node, event) => {
-          // [Modified] Use prop handler if available, else default
-          if (propOnNodeClick) {
-            propOnNodeClick(node, event);
-          } else {
-            if ((event as any).shiftKey) toggleSelectNode((node as any).id, true);
-            else {
+            // 1. [기본 동작] 무조건 실행: 노드 선택 및 도넛 메뉴 위치 잡기
+            // (이게 실행되어야 DetailPanel에 데이터가 가고, 도넛 메뉴가 뜹니다)
+            if ((event as any).shiftKey) {
+                toggleSelectNode((node as any).id, true);
+            } else {
                 setSelectedNode(node as any);
                 setActiveSub(null);
-                if (graphRef.current) setNodeMenuPos(graphRef.current.graph2ScreenCoords(node.x, node.y));
+                if (graphRef.current) {
+                    setNodeMenuPos(graphRef.current.graph2ScreenCoords(node.x, node.y));
+                }
             }
-          }
+
+            // 2. [외부 동작] Props로 전달된 핸들러가 있다면 추가로 실행
+            // (Canvas 모드에서 노드 클릭 시 자동 확장 기능 등)
+            if (propOnNodeClick) {
+                propOnNodeClick(node, event);
+            }
         }}
         onLinkClick={link => setSelectedLink(link as any)}
         onBackgroundClick={handleBackgroundClick}

@@ -22,7 +22,7 @@ export interface Cluster {
 }
 
 // App Mode Type
-export type AppMode = 'bigbrother' | 'autotracer' | 'dashboard';
+export type AppMode = 'bigbrother' | 'autotracer' | 'dashboard' | 'canvas';
 
 // Global State Interface
 interface GlobalState {
@@ -420,7 +420,17 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
             source: l.source.id || l.source, target: l.target.id || l.target, value: l.value, txDetails: l.txDetails
         }));
         const saveData = { nodes: cleanNodes, links: cleanLinks, clusters, layoutMode };
-        const { error } = await supabase.from('saved_sessions').insert({ user_id: session.user.id, title, mode, graph_data: saveData });
+        // [수정 후] 새로운 DB 구조에 맞춘 방식
+        const { error } = await supabase.from('saved_sessions').insert({
+            user_id: session.user.id,
+            title,
+            mode,
+            // 이제 컬럼이 분리되었으므로 각각 넣어줍니다.
+            nodes: graphData.nodes,
+            links: graphData.links,
+            groups: [], // Dashboard 모드에서는 그룹이 없으면 빈 배열
+            notes: ''   // Dashboard 모드에서는 메모가 없으면 빈 문자열
+        });
         return !error;
     },
     loadSession: async (sessionId) => {

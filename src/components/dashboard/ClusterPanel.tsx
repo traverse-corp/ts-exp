@@ -2,12 +2,33 @@ import { useState, useMemo, useEffect } from 'react';
 import { useGlobalStore } from '../../stores/useGlobalStore';
 import { TRANSLATIONS } from '../../constants/lang';
 
-export const ClusterPanel = () => {
+interface ClusterPanelProps {
+  nodes?: any[];
+  clusters?: any[];
+  onAdd?: (name: string, color: string, ids: string[]) => void;
+  onRemove?: (id: string) => void;
+  onUpdate?: (id: string, name: string, color: string, ids: string[]) => void;
+}
+
+export const ClusterPanel = ({ 
+    nodes: propNodes, 
+    clusters: propClusters, 
+    onAdd: propOnAdd, 
+    onRemove: propOnRemove, 
+    onUpdate: propOnUpdate 
+}: ClusterPanelProps = {}) => {
   const { 
-    graphData, clusters, addCluster, removeCluster, updateCluster, 
+    graphData, clusters: storeClusters, addCluster, removeCluster, updateCluster, 
     pendingClusterNodes, clearPendingClusterNodes, language 
   } = useGlobalStore();
   const t = TRANSLATIONS[language];
+
+  // [Modified] Use props if provided, else store
+  const displayNodes = propNodes || graphData.nodes;
+  const displayClusters = propClusters || storeClusters;
+  const doAdd = propOnAdd || addCluster;
+  const doRemove = propOnRemove || removeCluster;
+  const doUpdate = propOnUpdate || updateCluster;
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mode, setMode] = useState<'create' | 'edit'>('create');
@@ -34,15 +55,15 @@ export const ClusterPanel = () => {
   const candidateNodes = useMemo(() => {
     const lowerSearch = search.toLowerCase().trim();
     if (!lowerSearch) {
-        return graphData.nodes.filter(n => (n.group === 'target' || n.group === 'risk' || n.group === 'exchange'));
+        return displayNodes.filter((n: any) => (n.group === 'target' || n.group === 'risk' || n.group === 'exchange'));
     }
-    return graphData.nodes.filter(n => {
+    return displayNodes.filter((n: any) => {
         const id = n.id ? n.id.toLowerCase() : '';
         const label = n.label ? n.label.toLowerCase() : '';
         const memo = n.memo ? n.memo.toLowerCase() : '';
         return (id.includes(lowerSearch) || label.includes(lowerSearch) || memo.includes(lowerSearch)) && n.id;
     });
-  }, [graphData.nodes, search]);
+  }, [displayNodes, search]);
 
   const handleToggleNode = (id: string) => {
     const next = new Set(selectedIds);
@@ -75,8 +96,8 @@ export const ClusterPanel = () => {
     if (!clusterName.trim()) { alert(t.msg_enter_name); return; }
     if (selectedIds.size < 2) { alert(t.msg_min_nodes); return; }
 
-    if (mode === 'create') addCluster(clusterName, clusterColor, Array.from(selectedIds));
-    else if (mode === 'edit' && editingId) updateCluster(editingId, clusterName, clusterColor, Array.from(selectedIds));
+    if (mode === 'create') doAdd(clusterName, clusterColor, Array.from(selectedIds));
+    else if (mode === 'edit' && editingId) doUpdate(editingId, clusterName, clusterColor, Array.from(selectedIds));
 
     setIsModalOpen(false); setClusterName(''); setSelectedIds(new Set());
   };
@@ -157,11 +178,11 @@ export const ClusterPanel = () => {
 
         {!isModalOpen && (
             <div className="pointer-events-auto space-y-2 overflow-y-auto custom-scrollbar pr-1 pb-2 max-h-[30vh]">
-            {clusters.map(cluster => (
+            {displayClusters.map((cluster: any) => (
                 <div key={cluster.id} onClick={() => openEditModal(cluster)} className="bg-white/90 backdrop-blur border-l-4 p-2.5 rounded shadow-sm hover:shadow-md hover:scale-[1.02] transition-all cursor-pointer group relative" style={{ borderLeftColor: cluster.color }}>
                 <div className="flex justify-between items-center mb-0.5">
                     <span className="font-bold text-slate-700 text-xs truncate max-w-[180px]" style={{color: cluster.color}}>{cluster.name}</span>
-                    <button onClick={(e) => { e.stopPropagation(); if(confirm(t.confirm_dissolve_cluster)) removeCluster(cluster.id); }} className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded px-1.5 transition-all">✕</button>
+                    <button onClick={(e) => { e.stopPropagation(); if(confirm(t.confirm_dissolve_cluster)) doRemove(cluster.id); }} className="text-slate-300 hover:text-red-500 hover:bg-red-50 rounded px-1.5 transition-all">✕</button>
                 </div>
                 <div className="text-[10px] text-slate-500 font-mono">{cluster.nodeIds.length} {t.cluster_nodes_count}</div>
                 </div>
