@@ -219,33 +219,74 @@ export const ComplianceDashboard = () => {
       return () => { isMounted = false; clearInterval(interval); };
   }, [opWallets, monitorMode]);
 
-  const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' | 'source' | 'dest', txData?: any) => {
+const renderHopCell = (address: string | undefined, type: 'customer' | 'normal' | 'source' | 'dest' | 'center', txData?: any) => {
       if (!address) return <span className="text-slate-300">-</span>;
+
       const labelInfo = labelMap[address];
       const hasLabel = !!labelInfo;
+      
       let displayLabel = labelInfo?.label || 'Unknown';
-      let bgClass = "bg-slate-100 text-slate-500";
+      let bgClass = "bg-slate-100 text-slate-500"; // Default (Unknown)
 
-      if (type === 'customer') { displayLabel = 'Customer (Deposit)'; bgClass = "bg-green-50 text-green-700 border-green-100"; }
-      else if (hasLabel) { bgClass = "bg-indigo-50 text-indigo-700 border-indigo-100"; }
-      if (txData && address === txData.hopPlus1 && txData.hopPlus2) {
+      // 1. Customer (Inflow Sender)
+      if (type === 'customer') {
+          displayLabel = 'Customer (Deposit)';
+          bgClass = "bg-green-50 text-green-700 border-green-100";
+      }
+      // 2. Center (Ops Wallet) - [NEW]
+      else if (type === 'center') {
+          // Center는 주소 그대로 보여주거나 별칭
+          displayLabel = `${address.slice(0,4)}...${address.slice(-4)}`; 
+          bgClass = "bg-white border-blue-200 text-blue-800 shadow-sm"; 
+      }
+      // 3. Known Entity (Labeled)
+      else if (hasLabel) {
+          bgClass = "bg-indigo-50 text-indigo-700 border-indigo-100";
+      }
+
+      // 4. Deposit Address Logic (Hop +1 -> Hop +2 Label)
+      if (type === 'normal' && txData && address === txData.hopPlus1 && txData.hopPlus2) {
           const nextHopLabel = labelMap[txData.hopPlus2]?.label;
-          if (nextHopLabel) { displayLabel = `입금 주소 : ${nextHopLabel}`; bgClass = "bg-rose-50 text-rose-700 border-rose-100 font-bold"; }
+          if (nextHopLabel) {
+              displayLabel = `입금 주소 : ${nextHopLabel}`;
+              bgClass = "bg-rose-50 text-rose-700 border-rose-100 font-bold";
+          }
       }
 
       return (
           <div className="relative group flex justify-center w-full">
-              <div onClick={() => handleCopyAddr(address)} className={`border px-2 py-1 rounded truncate text-[10px] font-bold cursor-pointer hover:scale-105 transition-transform max-w-[120px] w-full text-center ${bgClass}`} title={`${address} (Click to Copy)`}>
-                  {displayLabel === 'Unknown' ? `${address.slice(0,6)}...` : displayLabel}
+              <div 
+                  onClick={() => handleCopyAddr(address)}
+                  className={`border px-2 py-1 rounded truncate text-[10px] font-bold cursor-pointer hover:scale-105 transition-transform max-w-[120px] w-full text-center ${bgClass}`} 
+                  title={`${address} (Click to Copy)`}
+              >
+                  {/* Center일 때는 이미 위에서 포맷팅 함, 아니면 Unknown 처리 */}
+                  {type === 'center' ? displayLabel : (displayLabel === 'Unknown' ? `${address.slice(0,6)}...` : displayLabel)}
               </div>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 hidden group-hover:flex flex-col gap-1 bg-white shadow-xl border border-slate-200 rounded p-1.5 z-50 w-36 animate-in fade-in slide-in-from-top-1 duration-200">
+
+              {/* Hover Menu (For ALL addresses including Center) */}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 hidden group-hover:flex flex-col gap-1 bg-white shadow-xl border border-slate-200 rounded p-1.5 z-[100] w-36 animate-in fade-in slide-in-from-top-1 duration-200">
                   <div className="text-[9px] font-mono text-slate-400 border-b border-slate-100 pb-1 mb-1 truncate text-center">{address}</div>
-                  <button onClick={() => handleInstantTrace(address)} className="text-[10px] bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 font-bold border border-amber-100 w-full text-left">Instant Trace</button>
-                  <button onClick={() => openReport({ ...txData, counterparty: address })} className="text-[10px] bg-slate-50 text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-bold border border-slate-200 w-full text-left">STR Report</button>
-                  {type === 'customer' && (
+                  
+                  <button onClick={() => handleInstantTrace(address)} className="text-[10px] bg-amber-50 text-amber-700 px-2 py-1 rounded hover:bg-amber-100 font-bold border border-amber-100 w-full text-left">
+                      Instant Trace
+                  </button>
+                  <button 
+                      onClick={() => openReport({ ...txData, counterparty: address })} 
+                      className="text-[10px] bg-slate-50 text-slate-700 px-2 py-1 rounded hover:bg-slate-100 font-bold border border-slate-200 w-full text-left"
+                  >
+                      STR Report
+                  </button>
+                  
+                  {/* Customer or High Risk Action */}
+                  {(type === 'customer' || hasLabel) && (
                       <>
-                          <button onClick={() => handleCheckKYC(address)} className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100 font-bold border border-indigo-100 w-full text-left">Check KYC</button>
-                          <button onClick={() => handleFreeze(address)} className="text-[10px] bg-red-50 text-red-700 px-2 py-1 rounded hover:bg-red-100 font-bold border border-red-100 w-full text-left">Freeze Wallet</button>
+                          <button onClick={() => handleCheckKYC(address)} className="text-[10px] bg-indigo-50 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-100 font-bold border border-indigo-100 w-full text-left">
+                              Check KYC
+                          </button>
+                          <button onClick={() => handleFreeze(address)} className="text-[10px] bg-red-50 text-red-700 px-2 py-1 rounded hover:bg-red-100 font-bold border border-red-100 w-full text-left">
+                              Freeze Wallet
+                          </button>
                       </>
                   )}
               </div>
@@ -560,8 +601,8 @@ export const ComplianceDashboard = () => {
                         </table>
                         </div>
                     )}
-                    {/* EXTENDED TABLE */}
-                    {monitorMode === 'extended' && (
+                    {/* === EXTENDED MODE === */}
+{monitorMode === 'extended' && (
                         <div className="h-full overflow-y-auto custom-scrollbar bg-slate-50/50">
                              <table className="w-full text-left border-collapse table-fixed">
                                 <thead className="bg-slate-100 text-[10px] font-bold text-slate-500 uppercase sticky top-0 z-10 shadow-sm">
@@ -577,27 +618,60 @@ export const ComplianceDashboard = () => {
                                 </thead>
                                 <tbody className="text-xs font-mono">
                                     {extendedTxs.map((row) => {
-                                        const risks = [row.hopMinus2, row.hopMinus1, row.hopPlus1, row.hopPlus2].map(addr => addr ? labelMap[addr]?.riskLevel : null).filter(Boolean);
-                                        const hasSevere = risks.some(r => ['SEVERE','HIGH'].includes(r || ''));
-                                        const hasLow = risks.includes('LOW');
-                                        const rowRiskColor = hasSevere ? 'bg-red-500' : (hasLow ? 'bg-green-500' : 'bg-slate-200');
+                                        const checkStrictRisk = (addr?: string) => {
+                                            if (!addr) return false;
+                                            const info = labelMap[addr];
+                                            if (!info) return true; // Unknown = Risk
+                                            if (info.riskLevel?.toUpperCase() !== 'LOW') return true; // Not Low = Risk
+                                            return false;
+                                        };
+                                        const isRiskDetected = checkStrictRisk(row.hopMinus2) || checkStrictRisk(row.hopPlus2);
+                                        const rowRiskColor = isRiskDetected ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] animate-pulse' : 'bg-green-400 opacity-50';
+
                                         return (
-                                        <tr key={row.id} className="border-b border-slate-200 bg-white hover:bg-blue-50/20 transition-colors h-14 relative group/row">
-                                            {row.isLoadingExtended && <td colSpan={7} className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center"><div className="h-0.5 w-20 bg-blue-100 overflow-hidden rounded-full"><div className="h-full bg-blue-500 animate-loading-bar"></div></div></td>}
-                                            <td className="p-2 text-center text-slate-400 border-r border-slate-100">{new Date(row.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit' })}</td>
-                                            <td className="p-2 border-r border-slate-100 text-center relative">{renderHopCell(row.hopMinus2, 'source', row)}{row.hopMinus2 && <div className="absolute top-1/2 -right-2 w-4 h-[1px] bg-slate-300"></div>}</td>
-                                            <td className="p-2 border-r border-slate-100 text-center relative">{renderHopCell(row.hopMinus1, row.type === 'INFLOW' ? 'customer' : 'normal', row)}</td>
+                                        <tr key={row.id} className="border-b border-slate-200 bg-white hover:bg-blue-50/20 transition-colors h-14 relative group/row hover:z-20">
+                                            {row.isLoadingExtended && (
+                                                <td colSpan={7} className="absolute inset-0 bg-white/80 z-10 flex items-center justify-center">
+                                                    <div className="h-0.5 w-20 bg-blue-100 overflow-hidden rounded-full"><div className="h-full bg-blue-500 animate-loading-bar"></div></div>
+                                                </td>
+                                            )}
+
+                                            <td className="p-2 text-center text-slate-400 border-r border-slate-100">
+                                                {new Date(row.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit' })}
+                                            </td>
+                                            
+                                            <td className="p-2 border-r border-slate-100 text-center relative">
+                                                {renderHopCell(row.hopMinus2, 'source', row)}
+                                                {row.hopMinus2 && <div className="absolute top-1/2 -right-2 w-4 h-[1px] bg-slate-300"></div>}
+                                            </td>
+
+                                            <td className="p-2 border-r border-slate-100 text-center relative">
+                                                {renderHopCell(row.hopMinus1, row.type === 'INFLOW' ? 'customer' : 'normal', row)}
+                                            </td>
+
                                             <td className="p-2 border-r border-slate-100 text-center bg-blue-50/10 relative">
                                                 <div className="font-bold text-blue-700 text-[10px] mb-1">{row.type}</div>
-                                                <div className="bg-white border border-blue-200 text-blue-800 px-2 py-1 rounded truncate text-[10px] shadow-sm cursor-pointer" onClick={() => handleCopyAddr(row.hopMe)} title={row.hopMe}>{row.hopMe.slice(0,4)}...{row.hopMe.slice(-4)}</div>
+                                                {renderHopCell(row.hopMe, 'center', row)}
                                                 <div className="text-[10px] font-bold mt-1 text-slate-600">{row.amount.toLocaleString()} {row.token}</div>
                                             </td>
-                                            <td className="p-2 border-r border-slate-100 text-center relative">{renderHopCell(row.hopPlus1, 'normal', row)}</td>
-                                            <td className="p-2 border-r border-slate-100 text-center relative">{row.hopPlus2 && <div className="absolute top-1/2 -left-2 w-4 h-[1px] bg-slate-300"></div>}{renderHopCell(row.hopPlus2, 'dest', row)}</td>
-                                            <td className="p-2 text-center"><div className={`w-3 h-3 rounded-full inline-block ${rowRiskColor} ring-2 ring-white`}></div></td>
+
+                                            <td className="p-2 border-r border-slate-100 text-center relative">
+                                                {renderHopCell(row.hopPlus1, 'normal', row)}
+                                            </td>
+
+                                            <td className="p-2 border-r border-slate-100 text-center relative">
+                                                {row.hopPlus2 && <div className="absolute top-1/2 -left-2 w-4 h-[1px] bg-slate-300"></div>}
+                                                {renderHopCell(row.hopPlus2, 'dest', row)}
+                                            </td>
+
+                                            <td className="p-2 text-center">
+                                                <div className={`w-3 h-3 rounded-full inline-block ring-2 ring-white transition-all ${rowRiskColor}`} title={isRiskDetected ? "High Risk Detected" : "Low Risk Verified"}></div>
+                                            </td>
                                         </tr>
                                     )})}
-                                    {extendedTxs.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">Waiting for next cycle...</td></tr>}
+                                    {extendedTxs.length === 0 && (
+                                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">Waiting for next cycle...</td></tr>
+                                    )}
                                 </tbody>
                              </table>
                         </div>
