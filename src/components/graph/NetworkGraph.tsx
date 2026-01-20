@@ -30,13 +30,29 @@ const createDonutSlice = (x: number, y: number, radius: number, innerRadius: num
   ].join(" ");
 };
 
-const NetworkGraph = () => {
+// [Modified] Props Interface added
+interface NetworkGraphProps {
+  nodes?: any[];
+  links?: any[];
+  groups?: any[];
+  onNodeClick?: (node: any, event: any) => void;
+}
+
+const NetworkGraph = ({ nodes: propNodes, links: propLinks, groups: propGroups, onNodeClick: propOnNodeClick }: NetworkGraphProps) => {
   const {
-    graphData, clusters, selectedNode, setSelectedNode, setSelectedLink,
+    graphData: storeGraphData, clusters: storeClusters, selectedNode, setSelectedNode, setSelectedLink,
     layoutMode, isPhysicsActive, selectedIds, selectNodesByIds, clearSelection, toggleSelectNode,
     setPendingClusterNodes,
     expandNode, removeNode, expandingNodes 
   } = useGlobalStore();
+
+  // [Modified] Use props if available, otherwise fallback to store
+  const displayNodes = propNodes || storeGraphData.nodes;
+  const displayLinks = propLinks || storeGraphData.links;
+  const displayClusters = propGroups || storeClusters;
+
+  // Reconstruct graphData object for ForceGraph2D
+  const activeGraphData = { nodes: displayNodes, links: displayLinks };
   const { language } = useGlobalStore();
   const t = TRANSLATIONS[language];
 
@@ -113,10 +129,10 @@ const NetworkGraph = () => {
         fg.d3Force('link').distance(25);
 
         const clusterForce = (alpha: number) => {
-          const nodes = graphData.nodes;
+          const nodes = displayNodes;
           const clusterMap = new Map();
 
-          clusters.forEach(cluster => {
+          displayClusters.forEach(cluster => {
             const members = nodes.filter((n: any) => n.clusterId === cluster.id);
             if (members.length === 0) return;
             let sx = 0, sy = 0;
@@ -166,7 +182,7 @@ const NetworkGraph = () => {
         fg.d3ReheatSimulation();
       }
     }
-  }, [graphData, clusters, layoutMode, isPhysicsActive]);
+  }, [activeGraphData, displayClusters, layoutMode, isPhysicsActive]);
 
   // ============================================================
   // [New] Menu Position Updater (Throttle applied)
@@ -237,7 +253,7 @@ const NetworkGraph = () => {
       const { x, y, w, h } = selectionBox;
       const fg = graphRef.current;
       const nodesInBox: string[] = [];
-      graphData.nodes.forEach((node: any) => {
+      displayNodes.forEach((node: any) => {
         const coords = fg.graph2ScreenCoords(node.x, node.y);
         if (coords.x >= x && coords.x <= x + w && coords.y >= y && coords.y <= y + h) {
           nodesInBox.push(node.id);
@@ -267,8 +283,8 @@ const NetworkGraph = () => {
 
       let clickedClusterId: string | null = null;
 
-      for (const cluster of clusters) {
-          const members = graphData.nodes.filter(n => n.clusterId === cluster.id);
+      for (const cluster of displayClusters) {
+          const members = displayNodes.filter((n: any) => n.clusterId === cluster.id);
           if (members.length === 0) continue;
 
           let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -294,9 +310,9 @@ const NetworkGraph = () => {
       }
 
       if (clickedClusterId) {
-          const memberIds = graphData.nodes
-              .filter(n => n.clusterId === clickedClusterId)
-              .map(n => n.id);
+          const memberIds = displayNodes
+              .filter((n: any) => n.clusterId === clickedClusterId)
+              .map((n: any) => n.id);
           selectNodesByIds(memberIds);
       } else {
           clearSelection();
@@ -325,7 +341,7 @@ const NetworkGraph = () => {
     if (typeof node.x !== 'number' || typeof node.y !== 'number') return;
     const peersIds = new Set<string>();
     if (node.clusterId) {
-      graphData.nodes.forEach(n => {
+      displayNodes.forEach((n: any) => {
         if (n.clusterId === node.clusterId && n.id !== node.id) peersIds.add(n.id);
       });
     }
@@ -336,7 +352,7 @@ const NetworkGraph = () => {
     }
     const peersData: Array<{ node: any; offsetX: number; offsetY: number }> = [];
     peersIds.forEach(id => {
-      const peer = graphData.nodes.find(n => n.id === id);
+      const peer = displayNodes.find((n: any) => n.id === id);
       if (peer && typeof peer.x === 'number' && typeof peer.y === 'number') {
         peersData.push({ node: peer, offsetX: peer.x - node.x, offsetY: peer.y - node.y });
         peer.fx = peer.x;
@@ -404,7 +420,7 @@ const NetworkGraph = () => {
     >
       <ForceGraph2D
         ref={graphRef}
-        graphData={graphData}
+        graphData={activeGraphData}
         backgroundColor="#f8fafc"
         
         enableNodeDrag={true}
@@ -423,7 +439,7 @@ const NetworkGraph = () => {
         linkDirectionalParticleWidth={link => (link as any).value > 50000 ? 6 : (link as any).value > 1000 ? 4 : 2}
 
         nodeCanvasObject={(node: any, ctx, globalScale) => {
-          const cluster = clusters.find(c => c.id === node.clusterId);
+          const cluster = displayClusters.find((c: any) => c.id === node.clusterId);
           const isSelected = selectedNode?.id === node.id || selectedIds.has(node.id);
           const isStart = node.isStart;
           const isDbMatched = node.isTerminal === true;
@@ -483,8 +499,8 @@ const NetworkGraph = () => {
         }}
 
         onRenderFramePre={(ctx, globalScale) => {
-          clusters.forEach(cluster => {
-            const nodesInCluster = graphData.nodes.filter(n => n.clusterId === cluster.id);
+          displayClusters.forEach((cluster: any) => {
+            const nodesInCluster = displayNodes.filter((n: any) => n.clusterId === cluster.id);
             if (nodesInCluster.length === 0) return;
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             nodesInCluster.forEach((n: any) => {
@@ -508,11 +524,16 @@ const NetworkGraph = () => {
         }}
 
         onNodeClick={(node, event) => {
-          if ((event as any).shiftKey) toggleSelectNode((node as any).id, true);
-          else {
-              setSelectedNode(node as any);
-              setActiveSub(null);
-              if (graphRef.current) setNodeMenuPos(graphRef.current.graph2ScreenCoords(node.x, node.y));
+          // [Modified] Use prop handler if available, else default
+          if (propOnNodeClick) {
+            propOnNodeClick(node, event);
+          } else {
+            if ((event as any).shiftKey) toggleSelectNode((node as any).id, true);
+            else {
+                setSelectedNode(node as any);
+                setActiveSub(null);
+                if (graphRef.current) setNodeMenuPos(graphRef.current.graph2ScreenCoords(node.x, node.y));
+            }
           }
         }}
         onLinkClick={link => setSelectedLink(link as any)}

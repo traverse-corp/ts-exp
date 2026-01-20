@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom'; // [Router] 추가
 import NetworkGraph from './components/graph/NetworkGraph';
 import { useGlobalStore } from './stores/useGlobalStore';
 import { useAutoTrace } from './hooks/useAutoTrace';
@@ -9,71 +10,48 @@ import { AuthModal } from './components/auth/AuthModal';
 import { SessionManager } from './components/dashboard/SessionManager';
 import { supabase } from './lib/supabaseClient';
 import { ComplianceDashboard } from './components/dashboard/ComplianceDashboard';
+import { CanvasPage } from './pages/CanvasPage'; // [NEW] Canvas Import
 
-function App() {
-  // [핵심 수정] 로컬 useState 대신 Store에서 모든 상태를 가져옵니다.
+// =============================================================================
+// [1] Main Page Component (기존 App 로직을 여기로 이동)
+// =============================================================================
+const MainPage = () => {
   const { 
-    // 1. 상태값 가져오기
     mode, setMode,
     language, setLanguage,
     layoutMode, setLayoutMode, 
     isPhysicsActive, setIsPhysicsActive,
-    
-    // 2. 입력값들 (대시보드와 공유됨)
     inputAddr, setInputAddr,
     traceAddr, setTraceAddr, 
     hopCount, setHopCount, 
     txLimit, setTxLimit,
     traceMode, setTraceMode, 
     startTime, setStartTime,
-
-    // 3. 내부 로직 상태
     isMonitoring, setIsMonitoring,
     riskNodes,
-    
-    // 4. 기능 및 데이터
-    addNodes, graphData,
-    session, setSession, signOut,
-    fetchOpWallets, opWallets,
-    
-    // 5. Hooks 상태 공유용 (필요시)
+    addNodes,
+    session, signOut,
+    fetchOpWallets,
     bb, at
   } = useGlobalStore();
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const navigate = useNavigate(); // [Router] 이동 훅
 
   const toggleLanguage = () => {
     setLanguage(language === 'ko' ? 'en' : 'ko');
   };
 
-  // -- Auth Init --
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-    return () => subscription.unsubscribe();
-  }, [setSession]);
-
-  // [NEW] 세션이 생기면(로그인하면) 운영 지갑 목록 불러오기
+  // [NEW] 세션이 생기면 운영 지갑 목록 불러오기
   useEffect(() => {
     if (session?.user) {
         fetchOpWallets();
     }
   }, [session, fetchOpWallets]);
   
-  // -- BigBrother Hook 연결 --
-  // Store에 있는 bb 객체를 업데이트하기 위해 로컬 훅 결과를 Store에 동기화할 수도 있지만,
-  // 여기서는 간편하게 로컬 변수로 쓰고, 렌더링에 사용합니다.
+  // Hooks 연결
   const localBB = useAutoTrace(isMonitoring && mode === 'bigbrother');
-  
-  // -- AutoTracer Hook 연결 --
   const localAT = useDeepTrace();
-
-  // Store의 bb, at 상태를 훅의 결과로 동기화 (선택 사항이지만 로그 출력을 위해 필요)
-  // 편의상 렌더링 시점에 직접 매핑하여 사용합니다.
   const displayLogs = mode === 'bigbrother' ? localBB.logs : localAT.traceLog;
   
   // Handlers
@@ -107,7 +85,6 @@ function App() {
         alert("Please select a Start Time for Time-Flow analysis.");
         return;
     }
-    // Hook 실행
     localAT.startDeepTrace(traceAddr, hopCount, txLimit, traceMode, startTime);
   };
 
@@ -115,7 +92,7 @@ function App() {
     localAT.stopDeepTrace();
   };
 
-  // 로그인 체크
+  // 로그인 체크 (AuthModal 표시)
   if (!session) {
     return (
         <div className="relative w-full h-screen bg-slate-50 overflow-hidden">
@@ -156,6 +133,12 @@ function App() {
                 </button>
                 <button onClick={() => setMode('autotracer')} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${mode === 'autotracer' ? 'bg-indigo-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100'}`}>AutoTracer</button>
                 <button onClick={() => { setMode('bigbrother'); setIsMonitoring(false); }} className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${mode === 'bigbrother' ? 'bg-blue-600 text-white shadow' : 'text-slate-500 hover:bg-slate-100'}`}>BigBrother</button>
+                
+                {/* [NEW] Canvas 바로가기 버튼 추가 (선택사항) */}
+                <div className="w-[1px] h-4 bg-slate-300 mx-1 self-center"></div>
+                <button onClick={() => navigate('/canvas')} className="px-3 py-1.5 rounded-full text-xs font-bold text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors" title="Go to Canvas Workspace">
+                    Canvas ↗
+                </button>
             </div>
 
             {/* 그래프 옵션 (대시보드 모드 아닐 때만 표시) */}
@@ -201,7 +184,6 @@ function App() {
             {mode === 'autotracer' && (
                 <div className="flex flex-col items-center gap-2">
                     <div className="w-[750px] bg-white/90 backdrop-blur-xl shadow-2xl rounded-full p-1.5 flex items-center gap-2 border border-indigo-100 transition-all focus-within:ring-2 focus-within:ring-indigo-500/50">
-                        {/* [핵심] traceAddr가 Store 값과 연동됨 */}
                         <input type="text" value={traceAddr} onChange={(e) => setTraceAddr(e.target.value)} placeholder="Target Address..." className="flex-[2] bg-transparent border-none px-4 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none" />
                         
                         <div className="flex items-center gap-2 pr-2 border-l border-slate-200 pl-3">
@@ -289,28 +271,21 @@ function App() {
                     </div>
 
                     <div className="p-1">
-                        <button 
-                            onClick={() => { toggleLanguage(); setIsUserMenuOpen(false); }}
-                            className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center justify-between group"
-                        >
+                        <button onClick={() => { toggleLanguage(); setIsUserMenuOpen(false); }} className="w-full text-left px-3 py-2 text-xs font-medium text-slate-600 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors flex items-center justify-between group">
                             <span className="flex items-center gap-2">🌐 Language</span>
-                            <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
-                                {language === 'ko' ? '한국어' : 'English'}
-                            </span>
+                            <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">{language === 'ko' ? '한국어' : 'English'}</span>
                         </button>
 
                         <div className="border-t border-slate-100 my-1"></div>
 
+                        {/* Session Manager (Includes Open in Canvas) */}
                         <div className="py-1">
                             <SessionManager currentMode={mode} />
                         </div>
                         
                         <div className="border-t border-slate-100 my-1"></div>
 
-                        <button 
-                            onClick={() => { signOut(); setIsUserMenuOpen(false); }}
-                            className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2"
-                        >
+                        <button onClick={() => { signOut(); setIsUserMenuOpen(false); }} className="w-full text-left px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2">
                             Sign Out
                         </button>
                     </div>
@@ -391,6 +366,33 @@ function App() {
           </>
       )}
     </div>
+  );
+}
+
+// =============================================================================
+// [2] App Component (Routing)
+// =============================================================================
+function App() {
+  const { setSession } = useGlobalStore();
+
+  // Auth 초기화는 앱 전체에서 한번만 실행
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, [setSession]);
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<MainPage />} />
+        <Route path="/canvas" element={<CanvasPage />} />
+      </Routes>
+    </Router>
   );
 }
 
