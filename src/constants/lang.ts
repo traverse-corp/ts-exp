@@ -149,6 +149,37 @@ export const TRANSLATIONS = {
     aml_history: "자금세탁 위험 노출 이력",
     realtime_data_table: "실시간 자산 입출금 모니터링",
     asset_portfolio: '운영 자산 현황',
+    // [L.E.A Dashboard]
+    lea_title: "수사관 모드",
+    lea_subtitle: "디지털 포렌식 & 가상자산 추적 대시보드",
+    btn_case_manager: "사건 파일 관리",
+    btn_iaan_request: "IAAN 긴급 공문 요청",
+
+    kpi_active_cases: "진행 중인 사건",
+    kpi_running_investigations: "추적 중인 케이스",
+    kpi_target_watchlist: "감시 대상 주소",
+    kpi_monitored: "BigBrother 모니터링",
+    kpi_threat_alerts: "위협 탐지 (24시간)",
+    kpi_realtime_detect: "실시간 발생",
+    kpi_evidence: "확보된 증거",
+    kpi_tagged_tx: "태깅된 트랜잭션",
+
+    sec_threat_feed: "실시간 위협 피드",
+    btn_view_all_bb: "BigBrother 전체보기",
+    col_time: "시간",
+    col_risk: "위험도",
+    col_target: "대상",
+    col_action: "활동",
+    col_analysis: "분석",
+    msg_scanning: "새로운 위협을 스캔 중입니다...",
+
+    sec_recent_cases: "최근 사건 파일",
+    btn_new_case: "+ 새 사건 생성",
+    msg_no_cases: "저장된 사건 파일이 없습니다.",
+    lbl_has_notes: "메모 있음",
+    lbl_no_notes: "메모 없음",
+
+    sec_watchlist_mini: "감시 대상 목록",
 
   },
   en: {
@@ -300,6 +331,37 @@ export const TRANSLATIONS = {
     aml_history: "History of AML Risk Exposure",
     realtime_data_table: 'Real-time Inflow/Outflow Monitor',
     asset_portfolio: 'Asset Portfolio Status',
+    // [L.E.A Dashboard]
+    lea_title: "Investigator Mode",
+    lea_subtitle: "Digital Forensic & Crypto Investigation Dashboard",
+    btn_case_manager: "Case Manager",
+    btn_iaan_request: "IAAN Protocol Request",
+
+    kpi_active_cases: "Active Cases",
+    kpi_running_investigations: "Running Investigations",
+    kpi_target_watchlist: "Target Watchlist",
+    kpi_monitored: "BigBrother Monitored",
+    kpi_threat_alerts: "Threat Alerts (24h)",
+    kpi_realtime_detect: "Real-time Detections",
+    kpi_evidence: "Evidence Collected",
+    kpi_tagged_tx: "Tagged Transactions",
+
+    sec_threat_feed: "Live Threat Feed",
+    btn_view_all_bb: "View All in BigBrother",
+    col_time: "Time",
+    col_risk: "Risk",
+    col_target: "Target",
+    col_action: "Action",
+    col_analysis: "Analysis",
+    msg_scanning: "Scanning for new threats...",
+
+    sec_recent_cases: "Recent Investigations",
+    btn_new_case: "+ New Case",
+    msg_no_cases: "No active cases found.",
+    lbl_has_notes: "Has notes",
+    lbl_no_notes: "No notes",
+
+    sec_watchlist_mini: "Target Watchlist",
 
 
   }

@@ -26,6 +26,8 @@ export type AppMode = 'bigbrother' | 'autotracer' | 'dashboard' | 'canvas';
 
 // Global State Interface
 interface GlobalState {
+
+    userType: 'enterprise' | 'lea';
     // Graph Data
     graphData: { nodes: ExtendedNode[], links: GraphLink[] };
     clusters: Cluster[];
@@ -58,6 +60,7 @@ interface GlobalState {
     reportTargetTx: any | null; // 보고 대상 트랜잭션
 
     // [NEW] 모니터링 모드 (Standard vs Extended)
+    setUserType: (type: 'enterprise' | 'lea') => void;
     monitorMode: 'standard' | 'extended';
     setMonitorMode: (mode: 'standard' | 'extended') => void;
 
@@ -189,6 +192,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
     pendingClusterNodes: [],
     expandingNodes: new Set(),
     language: 'ko',
+    userType: 'enterprise', // 초기값
 
     opWallets: [],
     // App Mode & Inputs (Default Values)
@@ -217,6 +221,17 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
 
     monitorMode: 'standard', // 기본값
     setMonitorMode: (mode) => set({ monitorMode: mode }),
+    setUserType: (userType) => set({ userType }),
+    setSession: (session) => {
+        // [핵심] 세션이 들어오면 메타데이터 확인하여 userType 설정
+        const metadataType = session?.user?.user_metadata?.user_type;
+        const determinedType = (metadataType === 'lea' || metadataType === 'enterprise') ? metadataType : 'enterprise';
+
+        set({
+            session,
+            userType: determinedType
+        });
+    },
 
     // 1. 불러오기 (로그인 직후 호출)
     fetchOpWallets: async () => {
@@ -279,7 +294,6 @@ export const useGlobalStore = create<GlobalState>((set, get) => ({
 
     // --- Actions ---
     setLanguage: (lang) => set({ language: lang }),
-    setSession: (session) => set({ session }),
     signOut: async () => { await supabase.auth.signOut(); set({ session: null }); },
 
     setMode: (mode) => set({ mode }),
